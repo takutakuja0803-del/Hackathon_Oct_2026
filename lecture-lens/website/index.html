@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lecture Lens · Review</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Bricolage+Grotesque:wght@600;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>Lecture Lens</h1>
+  <nav role="tablist" aria-label="Review sections">
+    <button role="tab" data-tab="notes" aria-selected="true">Notes</button>
+    <button role="tab" data-tab="words" aria-selected="false">Word bank <span id="wc"></span></button>
+    <button role="tab" data-tab="quiz" aria-selected="false">Quiz</button>
+  </nav>
+  <p id="who" class="muted"></p>
+</header>
+<main>
+  <section id="notes">
+    <div class="make">
+      <label for="tx">Paste a lecture transcript or your own notes</label>
+      <textarea id="tx" rows="7" placeholder="Paste text here. Audio transcription can feed this box later."></textarea>
+      <button id="gen" class="primary">Make notes</button> <span id="nstat" class="muted" role="status"></span>
+    </div>
+    <div id="nout"></div>
+  </section>
+  <section id="words" hidden><div id="wout"></div></section>
+  <section id="quiz" hidden>
+    <button id="qgen" class="primary">Make a quiz</button> <span id="qstat" class="muted" role="status"></span>
+    <div id="qout"></div>
+  </section>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.2/dist/mermaid.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

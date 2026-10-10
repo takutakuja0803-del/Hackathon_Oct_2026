@@ -1,0 +1,41 @@
+{
+  "manifest_version": 3,
+  "name": "Lecture Lens",
+  "version": "0.1.0",
+  "description": "Highlight confusing text for a plain-English explanation. Review notes and quizzes on the Lecture Lens site.",
+  "permissions": [
+    "storage",
+    "contextMenus"
+  ],
+  "host_permissions": [
+    "http://localhost:5173/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "exclude_matches": [
+        "http://localhost:5173/*"
+      ],
+      "js": [
+        "content.js"
+      ]
+    },
+    {
+      "matches": [
+        "http://localhost:5173/*"
+      ],
+      "js": [
+        "bridge.js"
+      ]
+    }
+  ],
+  "options_page": "options.html",
+  "action": {
+    "default_title": "Open Lecture Lens review"
+  }
+}

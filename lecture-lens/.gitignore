@@ -1,0 +1,4 @@
+﻿# Sensitive credentials & environment files
+start-server.bat
+.env
+node_modules/
