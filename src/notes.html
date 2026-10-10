@@ -1,0 +1,47 @@
+<!doctype html><meta charset="utf-8"><title>Clarify notes</title><link rel="stylesheet" href="shared.css">
+<main class="shell"><div class="topbar"><div class="brand">✨ Clarify notes</div><nav class="nav"><a class="active" href="notes.html">Notes</a><a href="quiz.html">Practice</a><a href="options.html">Settings</a></nav></div>
+  <section class="card"><p class="eyebrow">Capture → Understand</p><h1>Turn a lecture into something you can use.</h1><p class="muted">Record a lecture with your microphone, or paste a transcript to start the notes pipeline.</p>
+    <textarea id="transcript" placeholder="Paste a transcript here…"></textarea><p><button class="button primary" id="save">Save transcript</button> <button class="button" id="record">Start recording</button></p><div id="recording" class="status" hidden>Listening… click Stop recording when you are done.</div>
+  </section><section class="card"><p class="eyebrow">Persistent memory</p><h2>Saved learning context</h2><p class="muted">Save a note or concept here so the companion web app can bring it back later.</p><textarea id="memory" placeholder="e.g. A pointer stores the address of another value."></textarea><button class="button" id="saveMemory">Save to memory</button><span id="memoryStatus" class="muted"></span></section><section id="output"></section><section class="card"><p class="eyebrow">History</p><div id="history" class="muted">Loading history…</div></section>
+</main>
+<script type="module">
+  const output = document.querySelector("#output"), transcript = document.querySelector("#transcript"), record = document.querySelector("#record"), recording = document.querySelector("#recording");
+  let recognition;
+  function renderNotes(notes) {
+    output.innerHTML = notes.topics.map(topic => `<article class="card"><p class="eyebrow">${topic.title}</p><h2>${topic.summary}</h2><p>${topic.sourceExcerpt}</p><div>${topic.keyTerms.map(term => `<span class="term"><b>${term.term}</b>: ${term.definition}<br><small>${term.translation}</small></span>`).join("")}</div><div class="visual"><b>${topic.visual.type}</b><br>${topic.visual.content}</div></article>`).join("");
+  }
+  async function processTranscript() {
+    const text = transcript.value.trim(); if (!text) return;
+    output.innerHTML = `<div class="card status">Transcript saved. Running clean, summarize, terms, and visual steps…</div>`;
+    const response = await chrome.runtime.sendMessage({ action: "saveTranscript", transcript: { text, capturedAt: new Date().toISOString() } });
+    if (!response?.success) {
+      output.innerHTML = `<div class="card status">Notes pipeline error: ${response?.error || "Unknown error"}</div>`;
+      return;
+    }
+    renderNotes(response.data);
+  }
+  record.addEventListener("click", () => {
+    if (recognition) { recognition.stop(); recognition = null; record.textContent = "Start recording"; recording.hidden = true; return; }
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) { output.innerHTML = `<div class="card status">Live captions are not supported in this browser. Paste a transcript or upload audio to your API.</div>`; return; }
+    recognition = new SpeechRecognition(); recognition.continuous = true; recognition.interimResults = true;
+    recognition.onresult = event => { transcript.value = Array.from(event.results).map(result => result[0].transcript).join(" "); };
+    recognition.onerror = event => { output.innerHTML = `<div class="card status">Microphone error: ${event.error}</div>`; };
+    recognition.start(); record.textContent = "Stop recording"; recording.hidden = false;
+  });
+  document.querySelector("#save").addEventListener("click", processTranscript);
+  document.querySelector("#saveMemory").addEventListener("click", async () => {
+    const text = document.querySelector("#memory").value.trim(); if (!text) return;
+    const response = await chrome.runtime.sendMessage({ action: "saveMemory", memory: { text, source: "notes" } });
+    document.querySelector("#memoryStatus").textContent = response?.success ? " Saved." : ` ${response?.error || "Unable to save."}`;
+    if (response?.success) document.querySelector("#memory").value = "";
+    loadHistory();
+  });
+  async function loadHistory() {
+    const response = await chrome.runtime.sendMessage({ action: "getHistory" });
+    document.querySelector("#history").innerHTML = response?.data?.length
+      ? response.data.slice(0, 10).map(item => `<p><b>${item.type === "memory" ? "Saved memory" : "Clarified"}</b> · ${new Date(item.createdAt).toLocaleString()}<br>${item.text}</p>`).join("")
+      : "No history yet.";
+  }
+  loadHistory();
+</script>

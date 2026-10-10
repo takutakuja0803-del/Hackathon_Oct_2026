@@ -1,0 +1,21 @@
+<!doctype html><meta charset="utf-8"><title>Clarify settings</title><link rel="stylesheet" href="shared.css">
+<main class="shell"><div class="topbar"><div class="brand">✨ Clarify settings</div><nav class="nav"><a href="notes.html">Notes</a><a href="quiz.html">Practice</a></nav></div>
+  <div class="card"><p class="eyebrow">Personalize</p><h1>Learn in the way that works for you.</h1>
+    <label for="language">Native language</label><input id="language" placeholder="Spanish">
+    <label for="level">Reading level</label><select id="level"><option value="eli5">ELI5</option><option value="plain">Plain English</option><option value="academic">Academic</option></select>
+    <label for="subject">Course or subject</label><input id="subject" placeholder="Computer science">
+    <label for="api">Proxy API URL</label><input id="api" placeholder="http://localhost:8787">
+    <p><button class="button primary" id="save">Save settings</button> <span id="status" class="muted"></span></p>
+  </div>
+</main>
+<script type="module">
+  import { DEFAULT_SETTINGS, getSettings } from "./shared.js";
+  const fields = { language: "nativeLanguage", level: "readingLevel", subject: "subject", api: "apiBaseUrl" };
+  const settings = await getSettings();
+  for (const [id, key] of Object.entries(fields)) document.querySelector(`#${id}`).value = settings[key];
+  document.querySelector("#save").addEventListener("click", async () => {
+    const values = Object.fromEntries(Object.entries(fields).map(([id, key]) => [key, document.querySelector(`#${id}`).value.trim() || DEFAULT_SETTINGS[key]]));
+    await chrome.storage.sync.set(values);
+    document.querySelector("#status").textContent = "Saved.";
+  });
+</script>

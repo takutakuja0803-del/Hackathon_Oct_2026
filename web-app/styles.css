@@ -1,0 +1,9 @@
+:root { font-family: Inter, system-ui, sans-serif; color: #17202a; background: #f7f6fb; }
+body { margin: 0; } main { max-width: 980px; margin: auto; padding: 24px 18px 60px; }
+header { display: flex; justify-content: space-between; color: #4d3db5; gap: 12px; }
+.hero, .card { background: white; border: 1px solid #e7e4f6; border-radius: 16px; padding: 22px; margin-top: 18px; box-shadow: 0 5px 18px #1713270b; }
+.hero { background: linear-gradient(135deg, #f0edff, white); } h1 { max-width: 620px; font-size: clamp(30px, 6vw, 52px); color: #2c235f; margin: 8px 0; } h2 { color: #2c235f; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 18px; }
+.eyebrow { color: #5b4bdb; text-transform: uppercase; letter-spacing: .1em; font-size: 12px; font-weight: 800; }
+button { border: 0; border-radius: 9px; padding: 10px 14px; color: white; background: #5b4bdb; cursor: pointer; font-weight: 700; }
+article { border-top: 1px solid #eeeaf9; padding: 12px 0; } article p { line-height: 1.45; } small, #connection { color: #665e82; }
