@@ -10,6 +10,29 @@ const PORT = process.env.PORT || 5173;
 const WEB = path.join(__dirname, 'website');
 const MODELS = { fast: 'claude-haiku-5-5', smart: 'claude-sonnet-5-5' };
 const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css' };
+const MAX_OUTPUT = 8000;   // upper limit for max_tokens a request may ask for
+
+// One call to the Anthropic API. Returns the HTTP response and the parsed JSON body.
+async function callAnthropic({ model, max_tokens, system, content }) {
+  const r = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'anthropic-version': '2023-06-01',
+      'x-api-key': KEY
+    },
+    body: JSON.stringify({
+      model,
+      max_tokens,
+      ...(system ? { system } : {}),
+      messages: [{ role: 'user', content }]
+    })
+  });
+  const d = await r.json();
+  return { r, d };
+}
+
+const textOf = (d) => (Array.isArray(d.content) ? d.content : []).filter(x => x.type === 'text').map(x => x.text).join('');
 
 // mode "ast_explain": bilingual, line-by-line walkthrough of a code or maths snippet (used by Visualized Systems)
 function astExplainPrompt({ snippet, kind = 'code', nativeLanguage = 'Spanish' }) {
@@ -60,35 +83,54 @@ http.createServer(async (req, res) => {
       const pics = (Array.isArray(images) ? images : image ? [image] : []).filter(valid).slice(0, 6);
       const content = pics.length
         ? [
-            ...pics.flatMap((im, i) => [
-              ...(pics.length > 1 ? [{ type: 'text', text: `Picture ${i + 1}:` }] : []),
-              { type: 'image', source: { type: 'base64', media_type: im.media_type, data: im.base64 } }
-            ]),
-            { type: 'text', text: prompt }
-          ]
+          ...pics.flatMap((im, i) => [
+            ...(pics.length > 1 ? [{ type: 'text', text: `Picture ${i + 1}:` }] : []),
+            { type: 'image', source: { type: 'base64', media_type: im.media_type, data: im.base64 } }
+          ]),
+          { type: 'text', text: prompt }
+        ]
         : prompt;
 
-      const r = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          'anthropic-version': '2023-06-01',
-          'x-api-key': KEY
-        },
-        body: JSON.stringify({
-          model: MODELS[tier] || MODELS.fast,
-          max_tokens: Math.min(max_tokens, 4000),
-          system,
-          messages: [{ role: 'user', content }]
-        })
-      });
-      const d = await r.json();
+      const model = MODELS[tier] || MODELS.fast;
+      const req2 = { model, max_tokens: Math.min(max_tokens, MAX_OUTPUT), system, content };
+
+      let { r, d } = await callAnthropic(req2);
       if (!r.ok) {
         res.statusCode = r.status;
         console.error('Anthropic API Error:', d);
         return res.end(JSON.stringify({ error: d.error?.message || 'API error' }));
       }
-      return res.end(JSON.stringify({ text: d.content.filter(x => x.type === 'text').map(x => x.text).join('') }));
+
+      let text = textOf(d);
+
+      // Empty text without hitting the token limit: log it and try once more
+      if (!text.trim() && d.stop_reason !== 'max_tokens' && d.stop_reason !== 'refusal') {
+        console.warn('[empty reply, retrying once]', {
+          model, tier, images: pics.length,
+          imageKB: pics.map(p => Math.round(p.base64.length / 1024)),
+          stop_reason: d.stop_reason,
+          blockTypes: (d.content || []).map(x => x.type),
+          usage: d.usage
+        });
+        ({ r, d } = await callAnthropic(req2));
+        if (!r.ok) {
+          res.statusCode = r.status;
+          console.error('Anthropic API Error (retry):', d);
+          return res.end(JSON.stringify({ error: d.error?.message || 'API error' }));
+        }
+        text = textOf(d);
+      }
+
+      if (!text.trim()) {
+        console.error('[still empty after retry]', {
+          model, tier, stop_reason: d.stop_reason,
+          blockTypes: (d.content || []).map(x => x.type),
+          usage: d.usage,
+          raw: JSON.stringify(d).slice(0, 1500)
+        });
+      }
+
+      return res.end(JSON.stringify({ text, stop_reason: d.stop_reason || 'unknown' }));
     } catch (e) {
       console.error('Server error:', e);
       res.statusCode = 500;

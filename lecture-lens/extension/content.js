@@ -4,10 +4,82 @@
 //   - Highlight text -> the card opens by itself (can be turned off)
 //   - Snip tool: Alt+Shift+S (auto) / Alt+Shift+Q (force solve), drag over any area
 // The card picks its mode for you:
-//   - Translate: your language is auto-detected; text is translated + explained simply
+//   - Translate: your language is asked once on first use; text is translated + explained simply
 //   - Solve: problems are solved step by step, in your language
 // Either tab can still be chosen by hand.
 // ============================================================
+
+// ============================================================
+// SIMPLE-EXPLANATION SETTINGS
+// Change these, save, then reload the extension and refresh your open tabs.
+// ============================================================
+const EXPLAIN_LEVEL = 'A2';    // how simple the explanation is: 'A1' (easiest), 'A2', 'B1' or 'B2'
+const EXPLAIN_TIER = 'smart';  // 'smart' follows the simple-language rules much better; 'fast' is cheaper
+const MAX_SELECTION = 8000;   // longest highlighted text (in characters) that will open the card
+const COPY_GUARD = true;       // true: if the explanation is just a copy/translation, or too hard for the level, ask once more
+
+// What each level means. Add or edit levels here (maxWords = longest sentence allowed).
+const LEVEL_RULES = {
+  A1: { maxWords: 6, sentences: '2 to 4', vocab: 'only the most basic everyday words (about the 500 most common words)', grammar: 'the present simple only, no clauses, no passive' },
+  A2: { maxWords: 10, sentences: '3 to 5', vocab: 'common everyday words (about the 1,000 most common words)', grammar: 'the present simple, the simple past and "going to", joining ideas only with "and", "but" and "because"; no passive, no idioms, no phrasal verbs' },
+  B1: { maxWords: 16, sentences: '3 to 5', vocab: 'common words; a technical term is fine if you explain it', grammar: 'simple clauses; no idioms' },
+  B2: { maxWords: 22, sentences: '3 to 6', vocab: 'ordinary everyday and school words', grammar: 'natural but clear sentences' }
+};
+
+function explainRule(lang) {
+  const level = LEVEL_RULES[EXPLAIN_LEVEL] ? EXPLAIN_LEVEL : 'A2';
+  const r = LEVEL_RULES[level];
+  return `"simple": a very simple explanation of the ideas in the text, written ONLY in ${lang}, for a reader whose ${lang} is at CEFR level ${level}.
+  - It is NOT a translation and NOT a rewording. A translation keeps the original sentences and only changes the language. You must explain the ideas instead.
+  - First work out the main ideas of the text, then explain those ideas in your own words. Do not follow the order, the sentences or the wording of the text. Do not quote the text.
+  - Level ${level} language: sentences of at most ${r.maxWords} words, one idea per sentence; ${r.vocab}; ${r.grammar}.
+  - Replace every hard word (technical or academic terms, idioms, abbreviations, long words) with a short everyday description of what it is or does. Never use a hard word without explaining it. If a technical term must stay, write it once in brackets after its explanation.
+  - If the idea is abstract, compare it to something from daily life.
+  - Normally ${r.sentences} sentences in total. A single word: say what it means and how people use it. A long passage: explain the main idea, then each key idea in one or two short sentences (up to 8 sentences in total).
+  - Example of the difference (shown in English; you write in ${lang}).
+    Text: "The mitochondria are the organelles responsible for generating most of the cell's supply of ATP."
+    BAD (a translation in different words): "Mitochondria are the parts of the cell that make most of the cell's ATP."
+    GOOD (an explanation): "Cells need energy to live. Inside a cell there are tiny parts called mitochondria. They make the energy. They work like small power stations."`;
+}
+
+// Checks on the explanation the model wrote. Returns '' if it is fine, or the reason it is not.
+function wordsOf(s) { return String(s || '').toLowerCase().match(/[\p{L}\p{N}]+/gu) || []; }
+function wordPairs(s) {
+  const w = wordsOf(s), set = new Set();
+  for (let i = 0; i < w.length - 1; i++) set.add(w[i] + ' ' + w[i + 1]);
+  return set;
+}
+function sharedPairs(a, b) {                 // share of a's word pairs that also appear in b (same order = a copy)
+  const A = wordPairs(a), B = wordPairs(b);
+  if (!A.size) return 0;
+  let n = 0;
+  for (const x of A) if (B.has(x)) n++;
+  return n / A.size;
+}
+function charOverlap(a, b) {                 // letter-pair similarity, works for scripts without spaces too
+  const grams = (t) => {
+    const x = String(t || '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ''), set = new Set();
+    for (let i = 0; i < x.length - 1; i++) set.add(x.slice(i, i + 2));
+    return set;
+  };
+  const A = grams(a), B = grams(b);
+  if (!A.size || !B.size) return 0;
+  let n = 0;
+  for (const x of A) if (B.has(x)) n++;
+  return (2 * n) / (A.size + B.size);
+}
+function explanationProblem(simple, ...sources) {
+  const text = String(simple || '');
+  if (!COPY_GUARD || text.length < 30) return '';
+  const rules = LEVEL_RULES[EXPLAIN_LEVEL] || LEVEL_RULES.A2;
+  const longest = Math.max(0, ...text.split(/[.!?\u00bf\u00a1\u3002\uff01\uff1f\n]+/).map(x => wordsOf(x).length));
+  if (longest > rules.maxWords * 1.5) return `its sentences are too long for level ${EXPLAIN_LEVEL} (keep them under ${rules.maxWords} words)`;
+  for (const src of sources) {
+    if (String(src || '').length < 30) continue;
+    if (sharedPairs(text, src) >= 0.4 || charOverlap(text, src) >= 0.7) return 'it only translated or reworded the text instead of explaining the ideas';
+  }
+  return '';
+}
 
 const LANGUAGES = [
   'English', 'Spanish', 'French', 'German', 'Italian', 'Portuguese', 'Chinese (Simplified)',
@@ -15,58 +87,184 @@ const LANGUAGES = [
   'Vietnamese', 'Turkish', 'Indonesian', 'Tagalog', 'Polish', 'Dutch'
 ];
 
-// ---------- Native language auto-detection ----------
-// Browsers do not expose the OS keyboard layout directly, so we combine what they do expose:
-//   1. the browser's display language and preferred-language list (follows your OS/Chrome settings)
-//   2. the active keyboard layout's letters, when the browser allows reading them (Chrome, secure pages)
-//      used only when the browser language is English but the keyboard types another script.
-const LANG_BY_CODE = {
-  en: 'English', es: 'Spanish', fr: 'French', de: 'German', it: 'Italian', pt: 'Portuguese',
-  ja: 'Japanese', ko: 'Korean', ar: 'Arabic', hi: 'Hindi', ru: 'Russian', vi: 'Vietnamese',
-  tr: 'Turkish', id: 'Indonesian', tl: 'Tagalog', fil: 'Tagalog', pl: 'Polish', nl: 'Dutch'
+// ---------- Interface language ----------
+// Nothing is detected. The first time the card opens, the person is asked which language they want
+// (see showLanguageSetup). The answer is saved. Every label, button and message on the card is then shown
+// in that language: the English texts below are translated once by the AI and saved (chrome.storage).
+const ENDONYMS = {
+  'English': 'English', 'Spanish': 'Español', 'French': 'Français', 'German': 'Deutsch', 'Italian': 'Italiano',
+  'Portuguese': 'Português', 'Chinese (Simplified)': '简体中文', 'Chinese (Traditional)': '繁體中文',
+  'Japanese': '日本語', 'Korean': '한국어', 'Arabic': 'العربية', 'Hindi': 'हिन्दी', 'Russian': 'Русский',
+  'Vietnamese': 'Tiếng Việt', 'Turkish': 'Türkçe', 'Indonesian': 'Bahasa Indonesia', 'Tagalog': 'Tagalog',
+  'Polish': 'Polski', 'Dutch': 'Nederlands'
 };
-const SCRIPT_LANG = [
-  [/\p{Script=Cyrillic}/u, 'Russian'], [/\p{Script=Arabic}/u, 'Arabic'], [/\p{Script=Hangul}/u, 'Korean'],
-  [/\p{Script=Devanagari}/u, 'Hindi'], [/\p{Script=Greek}/u, 'Greek'], [/\p{Script=Hebrew}/u, 'Hebrew'],
-  [/\p{Script=Thai}/u, 'Thai']
-];
-let detectedLangCache = null;
+const UI_RTL = ['Arabic', 'Hebrew'];
 
-function langFromTag(tag) {
-  if (!tag) return null;
-  const parts = String(tag).toLowerCase().split('-');
-  const base = parts[0];
-  if (base === 'zh') return /hant|tw|hk|mo/.test(parts.slice(1).join('-')) ? 'Chinese (Traditional)' : 'Chinese (Simplified)';
-  if (LANG_BY_CODE[base]) return LANG_BY_CODE[base];
-  try {
-    const name = new Intl.DisplayNames(['en'], { type: 'language' }).of(base);
-    if (name && name.toLowerCase() !== base) return name;
-  } catch (_) { /* ignore */ }
-  return null;
+// Every piece of interface text. Keys stay the same; the values are translated for other languages.
+// Placeholders in {braces} are filled in by t().
+const UI_EN = {
+  close: 'Close',
+  errorTitle: 'LECTURE LENS ERROR',
+  explain: '✨ Explain',
+  solve: '🧮 Solve',
+  auto: '⚡ Auto',
+  autoTitle: 'Open the explanation automatically whenever I highlight text',
+  snipHint: 'Drag over any text, image or problem',
+  snipSolveHint: 'Drag over the problem to solve',
+  escCancel: 'Esc to cancel',
+  youHighlighted: 'You highlighted',
+  tabTranslate: '🌐 Translate',
+  tabSolve: '🧮 Solve',
+  whatItShows: 'What it shows',
+  yourLanguage: 'Your language',
+  translation: 'Translation',
+  simpleExplanation: 'Simple explanation (level {level})',
+  explainIn: 'Explain in',
+  problem: 'Problem',
+  answer: 'Answer',
+  stepByStep: 'Step by step',
+  askFollowUp: 'Ask a follow-up',
+  askPlaceholder: 'e.g. Why did we do that step?',
+  askButton: 'Ask',
+  aiMistakes: 'AI can make mistakes. Double-check important answers.',
+  topic: 'Topic',
+  topicPlaceholder: 'e.g. Japanese, Calculus',
+  saveWord: '💾 Save Word',
+  saveSolution: '💾 Save Solution',
+  saved: '✓ Saved',
+  quiz: '📝 Quiz',
+  stopAuto: 'Stop opening automatically when I highlight text',
+  stopAutoDone: 'Done. Highlight text and press Explain to open this next time.',
+  working: 'Working on it...',
+  looksMath: "This looks like a maths problem, so I'm solving it step by step.",
+  alreadyIn: 'Already in {lang}, so here is a plain explanation.',
+  detectedTranslated: 'Detected {source}, translated to {lang}.',
+  cutTranslation: 'The answer was too long to finish, so the translation is cut off. Select a little less text.',
+  cutOriginal: 'There was a lot of text, so the copy of the text is cut short. Your explanation and translation are complete.',
+  badFormat: 'The answer came back badly formatted, so part of it may be missing. Try again if something looks wrong.',
+  tooLong: 'The answer was too long to finish. Select a little less text and try again.',
+  cantRead: "Sorry, I couldn't read the answer. Please try again.",
+  noSolution: 'No solution returned.',
+  noAnswer: 'No answer returned.',
+  seeArea: '(see the highlighted area)',
+  none: '(none)',
+  noServer: 'Could not reach server. Make sure server.js is running.',
+  reloaded: 'The extension was reloaded. Refresh this page and try again.',
+  refusal: 'The AI declined to process this content, so there is no answer. If the text on the page can be selected, highlight it instead of snipping it. Otherwise try snipping a different area.',
+  emptyReply: 'The model sent back an empty reply (stop reason: {reason}). Check the terminal where server.js is running for details.',
+  translating: 'Translating the interface into {lang}...',
+  translateFailed: "Couldn't translate the interface into {lang} right now, so it is shown in English. Try again in a moment.",
+  noBackground: 'Could not talk to the extension background script. Make sure background.js was updated.',
+  noBackgroundReply: 'No response from the background script. Make sure background.js was updated.',
+  serverError: 'The server returned an error.',
+  captureFailed: "Could not capture the screen. Check that the background code and the 'activeTab' permission were added.",
+  highlightedArea: 'Highlighted area'
+};
+const UI_VERSION = Object.keys(UI_EN).length;    // changes when texts are added, so saved translations refresh
+let UI = UI_EN;
+let UI_LANG = 'English';
+const uiJobs = {};
+
+function t(key, vars) {
+  let text = (UI && UI[key]) || UI_EN[key] || key;
+  if (vars) for (const k of Object.keys(vars)) text = text.split('{' + k + '}').join(String(vars[k]));
+  return text;
 }
 
-async function keyboardLanguage() {
+const UI_SYSTEM = 'You translate user-interface text for a study tool. Reply with ONLY one JSON object. No markdown, no code fences, no extra text. Inside JSON string values never use straight double quotes ("); use single quotes or the language\'s own quote marks instead.';
+
+async function readUiCache(lang) {
   try {
-    if (!navigator.keyboard || !navigator.keyboard.getLayoutMap) return null;
-    const map = await Promise.race([navigator.keyboard.getLayoutMap(), new Promise(r => setTimeout(() => r(null), 250))]);
-    if (!map) return null;
-    const letters = ['KeyQ', 'KeyW', 'KeyE', 'KeyR', 'KeyT', 'KeyY'].map(k => map.get(k) || '').join('');
-    for (const [re, name] of SCRIPT_LANG) if (re.test(letters)) return name;
-  } catch (_) { /* not available on this page */ }
-  return null;
+    const { uiStrings = {} } = await chrome.storage.local.get({ uiStrings: {} });
+    return uiStrings[lang] || null;
+  } catch (_) { return null; }
 }
 
-async function detectNativeLanguage() {
-  if (detectedLangCache) return detectedLangCache;
-  const ui = (chrome.i18n && chrome.i18n.getUILanguage && chrome.i18n.getUILanguage()) || navigator.language;
-  let lang = langFromTag(ui) || langFromTag((navigator.languages || [])[0]) || 'English';
-  if (lang === 'English') {
-    const kb = await keyboardLanguage();
-    if (kb) lang = kb;
+// Pull whatever keys are readable out of a reply that is not valid JSON
+function salvageUi(text) {
+  const out = {};
+  for (const k of Object.keys(UI_EN)) {
+    const m = String(text).match(new RegExp('"' + k + '"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)"', 's'));
+    if (m) { try { out[k] = JSON.parse('"' + m[1] + '"'); } catch (_) { out[k] = m[1]; } }
   }
-  detectedLangCache = lang;
-  return lang;
+  return out;
 }
+
+const uiFailedAt = {};     // language -> time of the last failed translation (so a failure does not block every card)
+
+// Translate the interface texts into one language (once) and save them. Returns true on success.
+async function translateUi(lang) {
+  try {
+    const { siteUrl = 'http://localhost:5173' } = await chrome.storage.local.get({ siteUrl: 'http://localhost:5173' });
+    const base = siteUrl.replace(/\/+$/, '');
+    const keys = Object.keys(UI_EN);
+    const payload = {
+      tier: 'smart',
+      max_tokens: 6000,
+      system: UI_SYSTEM,
+      prompt: `Translate the VALUES of this JSON object from English into ${lang}. Keep every key exactly the same. Keep emoji where they are. Keep placeholders in curly braces, such as {level}, {lang}, {source} and {reason}, exactly as they are. Use short, natural wording that fits buttons and labels in an app. Keep "LECTURE LENS" in capital letters. Return only the JSON object.
+
+${JSON.stringify(UI_EN)}`
+    };
+    let obj = null;
+    for (let attempt = 0; attempt < 2 && !obj; attempt++) {     // one retry if the reply was cut off or badly formatted
+      const text = await runLLM(base, payload);
+      let parsed;
+      try { parsed = extractJson(text); } catch (_) { parsed = salvageUi(text); }
+      const have = keys.filter(k => typeof parsed[k] === 'string' && parsed[k].trim()).length;
+      if (have >= keys.length * 0.8) obj = parsed;
+    }
+    if (!obj) return false;                                      // incomplete: do not save
+    const out = { __v: UI_VERSION };
+    for (const k of keys) if (typeof obj[k] === 'string' && obj[k].trim()) out[k] = obj[k];
+    const { uiStrings = {} } = await chrome.storage.local.get({ uiStrings: {} });
+    uiStrings[lang] = out;
+    await chrome.storage.local.set({ uiStrings });
+    return true;
+  } catch (e) {
+    console.warn('[Lecture Lens] Could not translate the interface into ' + lang + ':', e);
+    return false;
+  }
+}
+
+// Make the interface use this language. With { translate: true } a missing translation is fetched now.
+// Returns true when the interface is now in that language.
+async function ensureUiStrings(lang, opts = {}) {
+  UI_LANG = lang;
+  if (lang === 'English') { UI = UI_EN; return true; }
+  let cached = await readUiCache(lang);
+  UI = cached ? { ...UI_EN, ...cached } : UI_EN;
+  if (cached && cached.__v === UI_VERSION) return true;
+  if (!opts.translate) return !!cached;
+  if (uiFailedAt[lang] && Date.now() - uiFailedAt[lang] < 60000) return !!cached;
+  if (!uiJobs[lang]) uiJobs[lang] = translateUi(lang).finally(() => { delete uiJobs[lang]; });
+  const ok = await uiJobs[lang];
+  if (ok) delete uiFailedAt[lang]; else uiFailedAt[lang] = Date.now();
+  cached = await readUiCache(lang);
+  if (cached) UI = { ...UI_EN, ...cached };
+  return ok || !!cached;
+}
+
+// Is the saved translation for this language complete and up to date?
+async function uiReady(lang) {
+  if (lang === 'English') return true;
+  const c = await readUiCache(lang);
+  return !!(c && c.__v === UI_VERSION);
+}
+
+// Use the saved language and its saved translation (no AI call)
+async function loadUi(translate) {
+  try {
+    const { native, langConfirmed } = await chrome.storage.local.get({ native: null, langConfirmed: false });
+    if (langConfirmed && native) await ensureUiStrings(native, { translate });
+  } catch (_) { /* ignore */ }
+}
+loadUi(false);
+try {
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && (changes.native || changes.uiStrings || changes.langConfirmed)) loadUi(false);
+  });
+} catch (_) { /* extension was reloaded */ }
 
 // Quick local guess: is this a maths or computation problem (equations, arithmetic, "calculate...")?
 // Ordinary questions, definitions and general homework are NOT treated as problems.
@@ -136,10 +334,10 @@ function esc(s) {
   ));
 }
 
-function langOptions(current, autoName = null) {
+function langOptions(current) {
   const list = LANGUAGES.includes(current) ? LANGUAGES : [current, ...LANGUAGES];
-  const auto = autoName ? `<option value="__auto__"${autoName ? ' selected' : ''}>Auto-detect (${esc(autoName)})</option>` : '';
-  return auto + list.map(l => `<option value="${esc(l)}"${!autoName && l === current ? ' selected' : ''}>${esc(l)}</option>`).join('');
+  const label = (l) => (ENDONYMS[l] && ENDONYMS[l] !== l) ? `${ENDONYMS[l]} (${l})` : l;
+  return list.map(l => `<option value="${esc(l)}"${l === current ? ' selected' : ''}>${esc(label(l))}</option>`).join('');
 }
 
 // ---------- Floating result box (Shadow DOM, fixed to viewport) ----------
@@ -318,10 +516,10 @@ function enableDrag(header) {
 
 function cardHtml(title, bodyHtml) {
   return `
-    <div class="ll-card">
+    <div class="ll-card" dir="${UI_RTL.includes(UI_LANG) ? 'rtl' : 'ltr'}">
       <div class="ll-header" id="ll-drag">
         <span>${title}</span>
-        <button class="ll-close" id="ll-close-card" title="Close">✕</button>
+        <button class="ll-close" id="ll-close-card" title="${esc(t('close'))}">✕</button>
       </div>
       <div class="ll-body">${bodyHtml}</div>
     </div>
@@ -334,7 +532,7 @@ function wireCard(box) {
 }
 
 function showError(msg) {
-  wireCard(render(cardHtml('LECTURE LENS ERROR', `<div class="ll-result ll-error">${esc(msg)}</div>`)));
+  wireCard(render(cardHtml(t('errorTitle'), `<div class="ll-result ll-error">${esc(msg)}</div>`)));
 }
 
 // ---------- 1. Text selection -> Explain / Solve buttons ----------
@@ -349,7 +547,7 @@ document.addEventListener('mouseup', (e) => {
   const selectedText = selection ? selection.toString().trim() : '';
   const hasCjk = /[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]/.test(selectedText);
   const vizMode = visualizeMode(selectedText);
-  const maxLength = vizMode === 'gdb' ? 4000 : 600;
+  const maxLength = vizMode === 'gdb' ? 4000 : MAX_SELECTION;
 
   clearTimeout(selTimer);
   if (!selectedText || (selectedText.length < 2 && !hasCjk) || selectedText.length > maxLength || !selection.rangeCount) {
@@ -368,12 +566,13 @@ document.addEventListener('mouseup', (e) => {
 
     if (autoExplain) { openCard({ term: selectedText, mode: 'auto' }); return; }
 
+    await loadUi(false);
     const box = render(`
       <div class="ll-btnrow">
-        <button class="ll-btn" id="ll-explain-btn">✨ Explain</button>
-        ${vizMode !== 'gdb' && looksLikeProblem(selectedText) ? '<button class="ll-btn alt" id="ll-solve-btn">🧮 Solve</button>' : ''}
+        <button class="ll-btn" id="ll-explain-btn">${esc(t('explain'))}</button>
+        ${vizMode !== 'gdb' && looksLikeProblem(selectedText) ? `<button class="ll-btn alt" id="ll-solve-btn">${esc(t('solve'))}</button>` : ''}
         ${vizMode ? '<button class="ll-btn viz" id="ll-viz-btn">📊 Visualize Execution / Graph</button>' : ''}
-        <button class="ll-btn" id="ll-auto-on" title="Open the explanation automatically whenever I highlight text">⚡ Auto</button>
+        <button class="ll-btn" id="ll-auto-on" title="${esc(t('autoTitle'))}">${esc(t('auto'))}</button>
       </div>
     `);
     box.querySelector('#ll-explain-btn').addEventListener('click', () => openCard({ term: selectedText, mode: 'auto' }));
@@ -410,14 +609,13 @@ function onSnipKey(e) {
   }
 }
 
-function startSnip(mode = 'auto') {
+async function startSnip(mode = 'auto') {
   removePopup();
   cancelSnip();
   snipActive = true;
+  await loadUi(false);                            // use the language saved in any tab
 
-  const hint = mode === 'solve'
-    ? 'Drag over the problem to solve'
-    : 'Drag over any text, image or problem';
+  const hint = mode === 'solve' ? t('snipSolveHint') : t('snipHint');
 
   snipHost = document.createElement('div');
   snipHost.style.cssText =
@@ -439,7 +637,7 @@ function startSnip(mode = 'auto') {
       }
     </style>
     <div class="shade"></div>
-    <div class="hint">${hint} &nbsp;·&nbsp; Esc to cancel</div>
+    <div class="hint">${esc(hint)} &nbsp;·&nbsp; ${esc(t('escCancel'))}</div>
     <div class="box"></div>
   `;
   const shade = root.querySelector('.shade');
@@ -490,12 +688,12 @@ async function finishSnip(r, mode) {
       type: 'capture_region', rect: r, viewportWidth: window.innerWidth
     });
     if (!resp || !resp.ok) {
-      throw new Error(resp?.error || 'Could not capture the screen. Check that the background code and the "activeTab" permission were added.');
+      throw new Error(resp?.error || t('captureFailed'));
     }
     openCard({ image: { base64: resp.base64, media_type: resp.media_type }, mode });
   } catch (e) {
     const msg = /context invalidated/i.test(e.message)
-      ? 'The extension was reloaded. Refresh this page and try again.' : e.message;
+      ? t('reloaded') : e.message;
     showError(msg);
   }
 }
@@ -509,11 +707,11 @@ async function callLLM(siteUrl, payload) {
     resp = await chrome.runtime.sendMessage({ type: 'llm', url: `${siteUrl}/api/llm`, payload });
   } catch (e) {
     if (/context invalidated/i.test(e.message)) {
-      throw new Error('The extension was reloaded. Refresh this page and try again.');
+      throw new Error(t('reloaded'));
     }
-    throw new Error('Could not talk to the extension background script. Make sure background.js was updated.');
+    throw new Error(t('noBackground'));
   }
-  if (!resp) throw new Error('No response from the background script. Make sure background.js was updated.');
+  if (!resp) throw new Error(t('noBackgroundReply'));
   return resp;
 }
 
@@ -521,31 +719,64 @@ async function runLLM(siteUrl, payload) {
   const resp = await callLLM(siteUrl, payload);
   if (resp.networkError) throw new TypeError('network');
   const data = resp.data || {};
-  if (!resp.ok || data.error) throw new Error(data.error || 'The server returned an error.');
-  return data.text || '';
+  if (!resp.ok || data.error) throw new Error(data.error || t('serverError'));
+  runLLM.truncated = data.stop_reason === 'max_tokens';   // was the reply cut off?
+  runLLM.stopReason = data.stop_reason || 'unknown';
+  // FIX: an empty reply means the server failed quietly. Say so instead of showing "couldn't read the answer".
+  if (!data.text || !String(data.text).trim()) {
+    if (runLLM.stopReason === 'refusal') {
+      throw new Error(t('refusal'));
+    }
+    throw new Error(t('emptyReply', { reason: runLLM.stopReason }));
+  }
+  return data.text;
 }
 
 function friendlyError(err) {
   return err instanceof TypeError
-    ? 'Could not reach server. Make sure server.js is running.'
+    ? t('noServer')
     : err.message;
+}
+
+// Fixes the usual ways a model breaks JSON: raw line breaks inside strings, trailing commas
+function repairJson(str) {
+  let out = '', inStr = false, esc = false;
+  for (const ch of str) {
+    if (inStr) {
+      if (esc) { out += ch; esc = false; }
+      else if (ch === '\\') { out += ch; esc = true; }
+      else if (ch === '"') { out += ch; inStr = false; }
+      else if (ch === '\n') out += '\\n';
+      else if (ch === '\r') out += '';
+      else if (ch === '\t') out += '\\t';
+      else out += ch;
+    } else {
+      if (ch === '"') inStr = true;
+      out += ch;
+    }
+  }
+  return out.replace(/,\s*([}\]])/g, '$1');
 }
 
 function extractJson(text) {
   const cleaned = String(text).replace(/```json|```/g, '');
-  return JSON.parse(cleaned.slice(cleaned.indexOf('{'), cleaned.lastIndexOf('}') + 1));
+  const body = cleaned.slice(cleaned.indexOf('{'), cleaned.lastIndexOf('}') + 1);
+  try { return JSON.parse(body); } catch (_) { return JSON.parse(repairJson(body)); }
 }
 
 // Translate mode: {original, translation, simple}
 function parseResult(text) {
   try {
-    const obj = extractJson(text);
+    let obj = extractJson(text);
+    if (!obj.simple) obj = Object.values(obj).find(v => v && typeof v === 'object' && v.simple) || obj;   // {"result": {...}}
     const same = obj.same_language === true;
-    if ((obj.translation || same) && obj.simple) {
+    const flat = (v) => Array.isArray(v) ? v.map(String).join(' ') : (v && typeof v === 'object') ? Object.values(v).map(String).join(' ') : String(v || '');
+    const simple = flat(obj.simple).trim();
+    if (simple) {            // translation is optional (pictures, diagrams, text already in your language)
       return {
-        original: obj.original ? String(obj.original) : '',
-        translation: obj.translation ? String(obj.translation) : '',
-        simple: String(obj.simple),
+        original: obj.original ? flat(obj.original) : (obj.title ? flat(obj.title) : ''),
+        translation: obj.translation ? flat(obj.translation) : '',
+        simple,
         source_language: obj.source_language ? String(obj.source_language) : '',
         same_language: same,
         is_problem: obj.is_problem === true
@@ -553,6 +784,18 @@ function parseResult(text) {
     }
   } catch (_) { /* fall through */ }
   return null;
+}
+
+// A reply that was cut off (too long) or is not valid JSON: pull out whatever fields are readable
+function salvageFields(text) {
+  const grab = (key) => {
+    const re = new RegExp('"' + key + '"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)', 's');
+    const m = String(text).match(re);
+    if (!m) return '';
+    const raw = m[1].replace(/\\$/, '');                 // drop a dangling backslash from a cut-off reply
+    try { return JSON.parse('"' + raw + '"'); } catch (_) { return raw; }
+  };
+  return { original: grab('original') || grab('title'), translation: grab('translation'), simple: grab('simple'), source_language: grab('source_language') };
 }
 
 // Solve mode: {problem, answer, steps[], tip}
@@ -575,23 +818,55 @@ function parseSolve(text) {
   return null;
 }
 
-const JSON_SYSTEM = 'You are a translator and a friendly tutor. Reply with ONLY one JSON object. No markdown, no code fences, no extra text.';
+const JSON_SYSTEM = 'You are a patient language tutor and translator. When asked to explain, you explain the ideas in very simple words and never just translate or reword the text. Reply with ONLY one JSON object. No markdown, no code fences, no extra text. Inside JSON string values never use straight double quotes ("); use single quotes or the language\'s own quote marks instead.';
 const SOLVE_SYSTEM = 'You are a patient, friendly tutor. Always get the answer right, then teach it clearly. Reply with ONLY one JSON object. No markdown, no code fences, no extra text. Write math in plain text (for example x^2, sqrt(16), 3/4) and never use LaTeX.';
 const FOLLOWUP_SYSTEM = 'You are a patient, friendly tutor helping a student. Answer their question clearly and kindly in a short reply. Plain text only: no markdown, no LaTeX; write math like x^2, sqrt(16), 3/4.';
+
+// ---------- First-use question: which language do you want? ----------
+
+function showLanguageSetup(preselect, onDone) {
+  const box = render(cardHtml('LECTURE LENS', `
+    <div class="ll-label">🌐 Language · 言語 · 语言 · 언어 · Idioma · Langue · Sprache · لغة · भाषा</div>
+    <div class="ll-row">
+      <select class="ll-select" id="ll-setup-lang" style="max-width:none">${langOptions(preselect)}</select>
+    </div>
+    <div class="ll-actions">
+      <button class="ll-action-btn primary" id="ll-setup-ok">OK ✓</button>
+    </div>
+  `));
+  wireCard(box);
+  const ok = box.querySelector('#ll-setup-ok');
+  ok.onclick = async () => {
+    const value = box.querySelector('#ll-setup-lang').value;
+    ok.disabled = true;
+    ok.textContent = '…';
+    await chrome.storage.local.set({ native: value, langConfirmed: true });
+    await ensureUiStrings(value, { translate: true });      // translate the interface once and save it
+    onDone();
+  };
+}
 
 // ---------- 4. Result card (text or snipped image; Translate or Solve) ----------
 
 async function openCard({ term = null, image = null, mode = 'auto' }) {
   const settings = await chrome.storage.local.get({
-    siteUrl: 'http://localhost:5173', native: null, nativeAuto: null, solveLang: null, subject: 'general'
+    siteUrl: 'http://localhost:5173', native: null, langConfirmed: false, solveLang: null, subject: 'general'
   });
   const siteUrl = settings.siteUrl.replace(/\/+$/, '');
 
-  // Your language: detected automatically unless you picked one by hand
-  const detected = await detectNativeLanguage();
-  const autoNative = settings.native == null || settings.nativeAuto === true;
-  let lang = autoNative ? detected : settings.native;               // translate target
-  if (autoNative && settings.native !== detected) chrome.storage.local.set({ native: detected, nativeAuto: true });
+  // First use: ask which language the person wants, once, then carry on
+  if (!settings.langConfirmed || !settings.native) {
+    showLanguageSetup(settings.native || 'English', () => openCard({ term, image, mode }));
+    return;
+  }
+  let lang = settings.native;                                       // translate target
+  const langName = ENDONYMS[lang] || lang;
+  if (!(await uiReady(lang))) {                                     // the card is about to be translated: say so
+    wireCard(render(cardHtml('LECTURE LENS',
+      `<div class="ll-result ll-loading">${esc(UI_EN.translating.replace('{lang}', langName))}</div>`)));
+  }
+  const uiOk = await ensureUiStrings(lang, { translate: true });    // interface texts in your language
+  const uiNotice = uiOk ? '' : t('translateFailed', { lang: langName });
   let solveManual = !!settings.solveLang;                           // otherwise solutions follow your language
   let solveLang = settings.solveLang || lang;                       // language the solution is explained in
 
@@ -602,64 +877,65 @@ async function openCard({ term = null, image = null, mode = 'auto' }) {
   let userPicked = !autoMode;
 
   const highlightedHtml = image
-    ? `<div class="ll-label">You highlighted</div>
-       <div class="ll-quote"><img class="ll-thumb" alt="Highlighted area" src="data:${image.media_type};base64,${image.base64}"></div>`
-    : `<div class="ll-label">You highlighted</div>
+    ? `<div class="ll-label">${esc(t('youHighlighted'))}</div>
+       <div class="ll-quote"><img class="ll-thumb" alt="${esc(t('highlightedArea'))}" src="data:${image.media_type};base64,${image.base64}"></div>`
+    : `<div class="ll-label">${esc(t('youHighlighted'))}</div>
        <div class="ll-quote">${esc(term)}</div>`;
 
   const box = render(cardHtml('LECTURE LENS', `
     ${highlightedHtml}
+    ${uiNotice ? `<div class="ll-tip">${esc(uiNotice)}</div>` : ''}
     <div class="ll-detect" id="ll-detect" hidden></div>
 
     <div class="ll-tabs" id="ll-tabs">
-      <button class="ll-tab" data-mode="translate">🌐 Translate</button>
-      <button class="ll-tab" data-mode="solve">🧮 Solve</button>
+      <button class="ll-tab" data-mode="translate">${esc(t('tabTranslate'))}</button>
+      <button class="ll-tab" data-mode="solve">${esc(t('tabSolve'))}</button>
     </div>
 
     <div class="ll-pane" id="ll-pane-translate">
-      ${image ? `<div class="ll-label">Text found</div><div class="ll-result ll-original" id="ll-original"></div>` : ''}
+      ${image ? `<div class="ll-label">${esc(t('whatItShows'))}</div><div class="ll-result ll-original" id="ll-original"></div>` : ''}
       <div class="ll-row">
-        <span class="ll-label" style="margin:0">Your language</span>
-        <select class="ll-select" id="ll-lang">${langOptions(lang, autoNative ? detected : null)}</select>
+        <span class="ll-label" style="margin:0">${esc(t('yourLanguage'))}</span>
+        <select class="ll-select" id="ll-lang">${langOptions(lang)}</select>
       </div>
-      <div class="ll-label" id="ll-trans-label">Translation</div>
+      <div class="ll-label" id="ll-trans-label">${esc(t('translation'))}</div>
       <div class="ll-result ll-translation" id="ll-translation"></div>
-      <div class="ll-label">Simple explanation (like you're 5)</div>
+      <div class="ll-label">${esc(t('simpleExplanation', { level: EXPLAIN_LEVEL }))}</div>
       <div class="ll-result" id="ll-simple"></div>
     </div>
 
     <div class="ll-pane" id="ll-pane-solve" hidden>
       <div class="ll-row">
-        <span class="ll-label" style="margin:0">Explain in</span>
+        <span class="ll-label" style="margin:0">${esc(t('explainIn'))}</span>
         <select class="ll-select" id="ll-solve-lang">${langOptions(solveLang)}</select>
       </div>
-      <div class="ll-label">Problem</div>
+      <div class="ll-label">${esc(t('problem'))}</div>
       <div class="ll-result ll-original" id="ll-problem"></div>
-      <div class="ll-label">Answer</div>
+      <div class="ll-label">${esc(t('answer'))}</div>
       <div class="ll-result ll-answer" id="ll-answer"></div>
-      <div class="ll-label">Step by step</div>
+      <div class="ll-label">${esc(t('stepByStep'))}</div>
       <ol class="ll-steps" id="ll-steps"></ol>
       <div class="ll-tip" id="ll-tip" hidden></div>
-      <div class="ll-label">Ask a follow-up</div>
+      <div class="ll-label">${esc(t('askFollowUp'))}</div>
       <div class="ll-ask">
-        <input class="ll-input" id="ll-ask-input" type="text" placeholder="e.g. Why did we do that step?">
-        <button class="ll-action-btn primary" id="ll-ask-btn" style="flex:none" disabled>Ask</button>
+        <input class="ll-input" id="ll-ask-input" type="text" placeholder="${esc(t('askPlaceholder'))}">
+        <button class="ll-action-btn primary" id="ll-ask-btn" style="flex:none" disabled>${esc(t('askButton'))}</button>
       </div>
       <div class="ll-thread" id="ll-thread"></div>
-      <div class="ll-note">AI can make mistakes. Double-check important answers.</div>
+      <div class="ll-note">${esc(t('aiMistakes'))}</div>
     </div>
 
     <div class="ll-row" style="margin-top:10px">
-      <span class="ll-label" style="margin:0">Topic</span>
-      <input class="ll-input" id="ll-topic" list="ll-topic-list" maxlength="40" placeholder="e.g. Japanese, Calculus">
+      <span class="ll-label" style="margin:0">${esc(t('topic'))}</span>
+      <input class="ll-input" id="ll-topic" list="ll-topic-list" maxlength="40" placeholder="${esc(t('topicPlaceholder'))}">
       <datalist id="ll-topic-list"></datalist>
     </div>
     <div class="ll-actions">
-      <button class="ll-action-btn primary" id="ll-save-btn" disabled>💾 Save Word</button>
-      <button class="ll-action-btn" id="ll-quiz-btn">📝 Quiz</button>
+      <button class="ll-action-btn primary" id="ll-save-btn" disabled>${esc(t('saveWord'))}</button>
+      <button class="ll-action-btn" id="ll-quiz-btn">${esc(t('quiz'))}</button>
     </div>
     ${vizMode ? '<button class="ll-action-btn viz" id="ll-viz-btn">📊 Visualize Execution / Graph</button>' : ''}
-    ${image ? '' : '<button class="ll-link" id="ll-auto-off">Stop opening automatically when I highlight text</button>'}
+    ${image ? '' : `<button class="ll-link" id="ll-auto-off">${esc(t('stopAuto'))}</button>`}
   `));
   wireCard(box);
 
@@ -681,7 +957,7 @@ async function openCard({ term = null, image = null, mode = 'auto' }) {
   const pEl = $('#ll-problem'), aEl = $('#ll-answer'), stEl = $('#ll-steps'), tipEl = $('#ll-tip');
   const solveSel = $('#ll-solve-lang'), askInput = $('#ll-ask-input'), askBtn = $('#ll-ask-btn'), threadEl = $('#ll-thread');
 
-  const LOADING = '<span class="ll-loading">Working on it...</span>';
+  const LOADING = `<span class="ll-loading">${esc(t('working'))}</span>`;
   const subjectHint = settings.subject && settings.subject !== 'general'
     ? `\nThe subject area is: ${settings.subject}.` : '';
 
@@ -695,9 +971,28 @@ async function openCard({ term = null, image = null, mode = 'auto' }) {
   let history = [];          // follow-up Q&A
 
   function updateSave() {
-    saveBtn.textContent = saved[currentMode] ? '✓ Saved' : (currentMode === 'solve' ? '💾 Save Solution' : '💾 Save Word');
+    saveBtn.textContent = saved[currentMode] ? t('saved') : (currentMode === 'solve' ? t('saveSolution') : t('saveWord'));
     const ready = currentMode === 'solve' ? !!solution : !!current;
     saveBtn.disabled = saved[currentMode] || !ready;
+  }
+
+  // If the explanation is just the translation again, ask once more for a real explanation
+  async function rewriteSimple(original, reason) {
+    try {
+      const text = await runLLM(siteUrl, {
+        tier: EXPLAIN_TIER,
+        max_tokens: 800,
+        system: JSON_SYSTEM,
+        prompt: `Text: "${original}"${subjectHint}
+
+A student needs this explained. A first attempt was rejected because ${reason}.
+
+Return a JSON object with exactly these keys:
+${explainRule(lang)}`
+      });
+      const obj = extractJson(text);
+      return obj.simple ? String(obj.simple) : null;
+    } catch (_) { return null; }
   }
 
   // ----- Translate -----
@@ -713,66 +1008,107 @@ async function openCard({ term = null, image = null, mode = 'auto' }) {
     updateSave();
     clampBox();
 
-    const simpleRule =
-      `"simple": an explanation of what the text means, written in ${lang}, as if you were explaining it to a five-year-old. Use very simple words and short sentences (1 to 3 sentences). If it is a single word, explain the word. If it is a sentence or passage, explain what it is saying.`;
+    const simpleRule = explainRule(lang);
     const detectRules =
       `"source_language": the language the text is written in, as an English name such as "Japanese".
 "same_language": true if the text is already written in ${lang}, otherwise false.
 "is_problem": true ONLY if the text is a maths problem or something that needs computation to answer (arithmetic, algebra, geometry, calculus, statistics, or a physics or chemistry calculation). false for everything else, including ordinary words, sentences and passages, definitions, opinion or essay questions, history or reading questions, and general quiz questions that need no calculation.`;
-    const useImage = !!image && !sourceText;
+    // Snips go straight from the picture to translation + explanation (no word-for-word transcription,
+    // which the model can refuse to do for long passages)
+    const useImage = !!image;
     const payload = {
-      tier: useImage ? 'smart' : 'fast',
-      max_tokens: 900,
+      tier: useImage ? 'smart' : EXPLAIN_TIER,
+      max_tokens: useImage ? 4500 : Math.min(6000, 1500 + String(sourceText || '').length * 2),   // long passages need room
       system: JSON_SYSTEM,
       prompt: useImage
         ? `This image is a screenshot of part of a document or web page.${subjectHint}
-Read the text in it, whatever language it is written in.
+Look at the text in it, whatever language it is written in. Do not copy the text out word for word: the student only needs the translation and the explanation.
 
-Return a JSON object with exactly these keys:
-"original": the text in the image, transcribed as accurately as you can.
+Return a JSON object with exactly these keys, in this order:
 ${detectRules}
-"translation": that text translated directly and naturally into ${lang}. If same_language is true, set this to "". Output only the translation, nothing else.
 ${simpleRule}
+"translation": that text translated directly and naturally into ${lang}. If same_language is true, set this to "". Output only the translation, nothing else.
+"title": a short title of at most 10 words saying what the image is about, in ${lang}. Write this key LAST, after "translation".
 If the image shows a picture or diagram with little or no text, describe what it shows in "simple" and set "translation" to "".
-If there is nothing readable or recognisable at all, set "original" to "", "translation" to "(nothing readable found)", and "simple" to a short note saying so.`
+If there is nothing readable or recognisable at all, set "title" to "", "translation" to "(nothing readable found)", and "simple" to a short note saying so.`
         : `Text: "${sourceText}"${subjectHint}
 
 Return a JSON object with exactly these keys:
 ${detectRules}
-"translation": the text translated directly and naturally into ${lang}. If same_language is true, set this to "". Output only the translation, nothing else.
-${simpleRule}`
+${simpleRule}
+"translation": the text translated directly and naturally into ${lang}. If same_language is true, set this to "". Output only the translation, nothing else.`
     };
     if (useImage) payload.image = image;
 
     try {
-      const text = await runLLM(siteUrl, payload);
+      let text = await runLLM(siteUrl, payload);
       if (id !== tReq) return;
-      const parsed = parseResult(text);
+      let parsed = parseResult(text);
+      if (!parsed) {                                   // cut off or malformed: ask once more with the biggest budget
+        payload.max_tokens = 6000;
+        text = await runLLM(siteUrl, payload);
+        if (id !== tReq) return;
+        parsed = parseResult(text);
+      }
       if (parsed) {
-        const same = parsed.same_language && !parsed.translation;
+        if (!parsed.original && sourceText) parsed.original = sourceText;
+        const same = !parsed.translation;                       // nothing to translate: hide that box
         tEl.hidden = same; transLabel.hidden = same;          // already in your language: skip the translation box
         tEl.textContent = parsed.translation;
+        const base = sourceText || parsed.translation || '';
+        const problem = explanationProblem(parsed.simple, parsed.translation, base);
+        if (problem && base.length >= 30) {                                              // copied, or too hard: one more try
+          sEl.innerHTML = LOADING;
+          clampBox();
+          const better = await rewriteSimple(base, problem);
+          if (id !== tReq) return;
+          if (better) parsed.simple = better;
+        }
         sEl.textContent = parsed.simple;
         if (oEl && useImage) {
-          oEl.textContent = parsed.original || '(none)';
-          if (parsed.original) sourceText = parsed.original;
+          oEl.textContent = parsed.original || t('none');
         }
         current = parsed;
         if (parsed.is_problem) tabsEl.hidden = false;           // a solvable problem: offer the Solve tab
         else if (autoMode && !userPicked) tabsEl.hidden = true;  // nothing to solve: no Solve tab
         if (autoMode && !userPicked && parsed.is_problem) {   // it is a problem to solve, so solve it
-          showDetect('This looks like a maths problem, so I\'m solving it step by step.');
+          showDetect(t('looksMath'));
           setMode('solve');
           return;
         }
-        if (parsed.same_language) showDetect(`Already in ${lang}, so here is a plain explanation.`);
-        else if (parsed.source_language) showDetect(`Detected ${parsed.source_language}, translated to ${lang}.`);
+        if (parsed.same_language) showDetect(t('alreadyIn', { lang: langName }));
+        else if (parsed.source_language) showDetect(t('detectedTranslated', { source: parsed.source_language, lang: langName }));
         else showDetect('');
       } else {
-        tEl.textContent = '—';
-        sEl.textContent = text || 'No explanation returned.';
-        if (oEl && useImage) oEl.textContent = '(none)';
-        current = { original: '', translation: '', simple: text || '' };
+        const part = salvageFields(text);
+        const cut = runLLM.truncated === true;          // really too long, or just badly formatted?
+        console.warn('[Lecture Lens] The reply was not valid JSON.', { cutOff: cut, reply: text });
+        if (part.simple) {                             // the reply was cut off, but the explanation is readable
+          tEl.hidden = !part.translation; transLabel.hidden = !part.translation;
+          const transCut = cut && !part.original;          // the title comes last, so if it exists the translation is complete
+          tEl.textContent = part.translation ? part.translation + (transCut ? '\u2026' : '') : '';
+          sEl.textContent = part.simple;
+          if (oEl && useImage) {
+            oEl.textContent = part.original || t('none');
+          }
+          current = {
+            original: part.original || sourceText || '', translation: part.translation, simple: part.simple,
+            source_language: part.source_language, same_language: false, is_problem: false
+          };
+          showDetect(cut
+            ? (transCut
+              ? t('cutTranslation')
+              : t('cutOriginal'))
+            : t('badFormat'));
+        } else {
+          tEl.textContent = '\u2014';
+          sEl.textContent = cut
+            ? t('tooLong')
+            : t('cantRead');
+          if (oEl && useImage) oEl.textContent = t('none');
+          current = null;                              // nothing usable to save
+          showDetect(`Details: stop reason = ${runLLM.stopReason}; reply length = ${String(text).length}; reply starts: ${String(text).slice(0, 250).replace(/\s+/g, ' ') || '(empty)'}`);
+        }
       }
     } catch (err) {
       if (id !== tReq) return;
@@ -838,9 +1174,9 @@ ${rules}`
         setMode('translate');
         return;
       }
-      solution = parsed || { problem: '', answer: '—', steps: [text || 'No solution returned.'], tip: '' };
+      solution = parsed || { problem: '', answer: '—', steps: [text || t('noSolution')], tip: '' };
 
-      pEl.textContent = solution.problem || term || '(see the highlighted area)';
+      pEl.textContent = solution.problem || term || t('seeArea');
       aEl.textContent = solution.answer;
       stEl.innerHTML = '';
       for (const s of solution.steps) {
@@ -897,7 +1233,7 @@ Answer their question directly and kindly. If you notice a mistake in the earlie
 
     try {
       const text = (await runLLM(siteUrl, payload)).trim();
-      aReply.textContent = text || 'No answer returned.';
+      aReply.textContent = text || t('noAnswer');
       history.push({ q, a: text });
     } catch (err) {
       aReply.classList.add('ll-error');
@@ -923,19 +1259,11 @@ Answer their question directly and kindly. If you notice a mistake in the earlie
   tabs.forEach(t => t.addEventListener('click', () => { userPicked = true; setMode(t.dataset.mode); }));
 
   langSel.addEventListener('change', async () => {
-    if (langSel.value === '__auto__') {
-      lang = detected;
-      await chrome.storage.local.set({ native: lang, nativeAuto: true });
-    } else {
-      lang = langSel.value;
-      await chrome.storage.local.set({ native: lang, nativeAuto: false });
-    }
-    if (!solveManual) {                       // solutions follow your language unless you chose another
-      solveLang = lang;
-      solveSel.innerHTML = langOptions(solveLang);
-      started.solve = false;
-    }
-    loadTranslate();
+    await chrome.storage.local.set({ native: langSel.value, langConfirmed: true });
+    await chrome.storage.local.remove('solveLang');           // solutions follow the new language again
+    langSel.disabled = true;                                  // the card is rebuilt once the interface is translated
+    // Rebuild the whole card so every label switches to the new language
+    openCard({ term, image, mode: autoMode && !userPicked ? 'auto' : currentMode });
   });
   solveSel.addEventListener('change', async () => {
     solveLang = solveSel.value;
@@ -1018,11 +1346,11 @@ Answer their question directly and kindly. If you notice a mistake in the earlie
   const autoOff = $('#ll-auto-off');
   if (autoOff) autoOff.onclick = async () => {
     await chrome.storage.local.set({ autoExplain: false });
-    autoOff.textContent = 'Done. Highlight text and press Explain to open this next time.';
+    autoOff.textContent = t('stopAutoDone');
     autoOff.disabled = true;
   };
 
-  if (autoMode && mode === 'solve') showDetect('This looks like a maths problem, so I\'m solving it step by step.');
+  if (autoMode && mode === 'solve') showDetect(t('looksMath'));
   setMode(mode);
 }
 
