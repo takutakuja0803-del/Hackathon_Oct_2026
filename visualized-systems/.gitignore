@@ -1,0 +1,28 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build Outputs
+dist/
+build/
+out/
+*.o
+*.out
+*.exe
+*.dSYM/
+
+# Environment & Logs
+.env
+.env.local
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# System & IDE
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*.swo

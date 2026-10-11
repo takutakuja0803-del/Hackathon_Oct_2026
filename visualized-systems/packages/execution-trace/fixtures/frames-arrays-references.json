@@ -1,0 +1,320 @@
+{
+  "schemaVersion": "0.2",
+  "traceId": "fixture-frames-arrays-references",
+  "source": {
+    "language": "cpp",
+    "standard": "c++20",
+    "text": "void read(int count, int& ref, int (&items)[2]) {\n    int copy = ref;\n}\nint main() {\n    int values[2] = {3, 4};\n    read(3, values[0], values);\n}"
+  },
+  "producer": {
+    "kind": "fixture",
+    "name": "nested-frames-arrays-references"
+  },
+  "outcome": "completed",
+  "steps": [
+    {
+      "index": 0,
+      "location": {
+        "status": "known",
+        "line": {
+          "value": 2,
+          "provenance": "fixture-authored"
+        }
+      },
+      "stop": {
+        "reason": "breakpoint",
+        "description": "Inside read; fixture-authored snapshot"
+      },
+      "frames": [
+        {
+          "id": "frame-read-1",
+          "functionName": {
+            "value": "read",
+            "provenance": "fixture-authored"
+          },
+          "location": {
+            "status": "known",
+            "line": {
+              "value": 2,
+              "provenance": "fixture-authored"
+            }
+          },
+          "variables": [
+            {
+              "id": "var-read-count",
+              "name": {
+                "value": "count",
+                "provenance": "fixture-authored"
+              },
+              "type": {
+                "value": "int",
+                "provenance": "fixture-authored"
+              },
+              "role": "parameter",
+              "value": {
+                "kind": "scalar",
+                "display": "3",
+                "encoding": "decimal",
+                "availability": {
+                  "status": "available"
+                },
+                "provenance": "fixture-authored"
+              }
+            },
+            {
+              "id": "var-read-ref",
+              "name": {
+                "value": "ref",
+                "provenance": "fixture-authored"
+              },
+              "type": {
+                "value": "int&",
+                "provenance": "fixture-authored"
+              },
+              "role": "parameter",
+              "value": {
+                "kind": "reference",
+                "display": "aliases values[0]",
+                "target": {
+                  "status": "resolved",
+                  "targetStorageId": "storage-main-values-0",
+                  "offsetBytes": 0,
+                  "provenance": "fixture-authored"
+                },
+                "availability": {
+                  "status": "available"
+                },
+                "provenance": "fixture-authored"
+              }
+            },
+            {
+              "id": "var-read-items",
+              "name": {
+                "value": "items",
+                "provenance": "fixture-authored"
+              },
+              "type": {
+                "value": "int (&)[2]",
+                "provenance": "fixture-authored"
+              },
+              "role": "parameter",
+              "value": {
+                "kind": "array",
+                "extent": {
+                  "value": 2,
+                  "provenance": "fixture-authored"
+                },
+                "elements": [
+                  {
+                    "id": "var-read-items-0",
+                    "name": {
+                      "value": "[0]",
+                      "provenance": "fixture-authored"
+                    },
+                    "type": {
+                      "value": "int",
+                      "provenance": "fixture-authored"
+                    },
+                    "role": "element",
+                    "storageId": "storage-main-values-0",
+                    "value": {
+                      "kind": "scalar",
+                      "display": "3",
+                      "availability": {
+                        "status": "available"
+                      },
+                      "provenance": "fixture-authored"
+                    }
+                  },
+                  {
+                    "id": "var-read-items-1",
+                    "name": {
+                      "value": "[1]",
+                      "provenance": "fixture-authored"
+                    },
+                    "type": {
+                      "value": "int",
+                      "provenance": "fixture-authored"
+                    },
+                    "role": "element",
+                    "storageId": "storage-main-values-1",
+                    "value": {
+                      "kind": "scalar",
+                      "display": "4",
+                      "availability": {
+                        "status": "available"
+                      },
+                      "provenance": "fixture-authored"
+                    }
+                  }
+                ],
+                "availability": {
+                  "status": "available"
+                },
+                "provenance": "fixture-authored"
+              }
+            },
+            {
+              "id": "var-read-copy",
+              "name": {
+                "value": "copy",
+                "provenance": "fixture-authored"
+              },
+              "type": {
+                "value": "int",
+                "provenance": "fixture-authored"
+              },
+              "role": "local",
+              "value": {
+                "kind": "scalar",
+                "display": "3",
+                "availability": {
+                  "status": "available"
+                },
+                "provenance": "fixture-authored"
+              }
+            }
+          ]
+        },
+        {
+          "id": "frame-main-0",
+          "functionName": {
+            "value": "main",
+            "provenance": "fixture-authored"
+          },
+          "location": {
+            "status": "known",
+            "line": {
+              "value": 6,
+              "provenance": "fixture-authored"
+            }
+          },
+          "variables": [
+            {
+              "id": "var-main-values",
+              "name": {
+                "value": "values",
+                "provenance": "fixture-authored"
+              },
+              "type": {
+                "value": "int[2]",
+                "provenance": "fixture-authored"
+              },
+              "role": "local",
+              "value": {
+                "kind": "array",
+                "extent": {
+                  "value": 2,
+                  "provenance": "fixture-authored"
+                },
+                "elements": [
+                  {
+                    "id": "var-main-values-0",
+                    "name": {
+                      "value": "[0]",
+                      "provenance": "fixture-authored"
+                    },
+                    "type": {
+                      "value": "int",
+                      "provenance": "fixture-authored"
+                    },
+                    "role": "element",
+                    "storageId": "storage-main-values-0",
+                    "address": {
+                      "value": "0x2000",
+                      "provenance": "fixture-authored"
+                    },
+                    "value": {
+                      "kind": "scalar",
+                      "display": "3",
+                      "availability": {
+                        "status": "available"
+                      },
+                      "provenance": "fixture-authored"
+                    }
+                  },
+                  {
+                    "id": "var-main-values-1",
+                    "name": {
+                      "value": "[1]",
+                      "provenance": "fixture-authored"
+                    },
+                    "type": {
+                      "value": "int",
+                      "provenance": "fixture-authored"
+                    },
+                    "role": "element",
+                    "storageId": "storage-main-values-1",
+                    "address": {
+                      "value": "0x2004",
+                      "provenance": "fixture-authored"
+                    },
+                    "value": {
+                      "kind": "scalar",
+                      "display": "4",
+                      "availability": {
+                        "status": "available"
+                      },
+                      "provenance": "fixture-authored"
+                    }
+                  }
+                ],
+                "availability": {
+                  "status": "available"
+                },
+                "provenance": "fixture-authored"
+              }
+            }
+          ]
+        }
+      ],
+      "storage": [
+        {
+          "id": "storage-main-values-0",
+          "kind": "stack",
+          "address": {
+            "value": "0x2000",
+            "provenance": "fixture-authored"
+          },
+          "sizeBytes": {
+            "value": 4,
+            "provenance": "fixture-authored"
+          },
+          "type": {
+            "value": "int",
+            "provenance": "fixture-authored"
+          },
+          "lifetime": "live",
+          "provenance": "fixture-authored"
+        },
+        {
+          "id": "storage-main-values-1",
+          "kind": "stack",
+          "address": {
+            "value": "0x2004",
+            "provenance": "fixture-authored"
+          },
+          "sizeBytes": {
+            "value": 4,
+            "provenance": "fixture-authored"
+          },
+          "type": {
+            "value": "int",
+            "provenance": "fixture-authored"
+          },
+          "lifetime": "live",
+          "provenance": "fixture-authored"
+        }
+      ],
+      "stdout": "",
+      "stderr": "",
+      "observations": {
+        "completeness": "partial",
+        "notes": [
+          "Frames are ordered innermost first. Reference identity aliases the target storage; it is not a pointer variable with independent storage."
+        ]
+      }
+    }
+  ],
+  "diagnostics": []
+}

@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://visualized-gdb.invalid/schemas/execution-trace-0.2.json",
+  "title": "Visualized GDB ExecutionTrace",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "traceId", "source", "producer", "outcome", "steps", "diagnostics"],
+  "properties": {
+    "schemaVersion": { "const": "0.2" },
+    "traceId": { "type": "string", "minLength": 1 },
+    "source": { "$ref": "#/$defs/source" },
+    "producer": { "$ref": "#/$defs/producer" },
+    "outcome": { "enum": ["completed", "compile-error", "runtime-error", "stopped", "limit-reached", "unknown"] },
+    "steps": { "type": "array", "items": { "$ref": "#/$defs/step" } },
+    "diagnostics": { "type": "array", "items": { "$ref": "#/$defs/diagnostic" } }
+  },
+  "$defs": {
+    "provenance": { "enum": ["debugger-observed", "backend-inferred", "instrumentation-tracked", "fixture-authored", "unknown"] },
+    "evidence": { "type": "object", "additionalProperties": false, "required": ["value", "provenance"], "properties": { "value": {}, "provenance": { "$ref": "#/$defs/provenance" } } },
+    "source": { "type": "object", "additionalProperties": false, "required": ["language", "text"], "properties": { "language": { "const": "cpp" }, "text": { "type": "string" }, "standard": { "type": "string" } } },
+    "producer": { "type": "object", "additionalProperties": false, "required": ["kind", "name"], "properties": { "kind": { "enum": ["lldb", "fixture"] }, "name": { "type": "string", "minLength": 1 }, "version": { "type": "string" }, "target": { "type": "string" } } },
+    "location": { "oneOf": [
+      { "type": "object", "additionalProperties": false, "required": ["status", "line"], "properties": { "status": { "const": "known" }, "file": { "$ref": "#/$defs/evidence" }, "line": { "allOf": [{ "$ref": "#/$defs/evidence" }, { "properties": { "value": { "type": "integer", "minimum": 1 } } }] }, "column": { "allOf": [{ "$ref": "#/$defs/evidence" }, { "properties": { "value": { "type": "integer", "minimum": 1 } } }] } } },
+      { "type": "object", "additionalProperties": false, "required": ["status", "reason"], "properties": { "status": { "enum": ["unknown", "unavailable"] }, "reason": { "type": "string", "minLength": 1 } } }
+    ] },
+    "availability": { "oneOf": [
+      { "type": "object", "additionalProperties": false, "required": ["status"], "properties": { "status": { "const": "available" } } },
+      { "type": "object", "additionalProperties": false, "required": ["status", "reason"], "properties": { "status": { "enum": ["unknown", "unavailable"] }, "reason": { "type": "string" } }, "not": { "required": ["message"] } },
+      { "type": "object", "additionalProperties": false, "required": ["status", "message"], "properties": { "status": { "const": "error" }, "message": { "type": "string" }, "code": { "type": "string" } } }
+    ] },
+    "resolution": { "oneOf": [
+      { "type": "object", "additionalProperties": false, "required": ["status", "targetStorageId", "provenance"], "properties": { "status": { "const": "resolved" }, "targetStorageId": { "type": "string", "minLength": 1 }, "offsetBytes": { "type": "integer" }, "provenance": { "$ref": "#/$defs/provenance" } } },
+      { "type": "object", "additionalProperties": false, "required": ["status", "provenance"], "properties": { "status": { "const": "null" }, "provenance": { "$ref": "#/$defs/provenance" } } },
+      { "type": "object", "additionalProperties": false, "required": ["status", "reason", "provenance"], "properties": { "status": { "const": "unresolved" }, "reason": { "type": "string" }, "provenance": { "$ref": "#/$defs/provenance" } } },
+      { "type": "object", "additionalProperties": false, "required": ["status", "targetStorageId", "offsetBytes", "provenance"], "properties": { "status": { "const": "out-of-bounds" }, "targetStorageId": { "type": "string" }, "offsetBytes": { "type": "integer" }, "provenance": { "$ref": "#/$defs/provenance" } } },
+      { "type": "object", "additionalProperties": false, "required": ["status", "targetStorageId", "provenance"], "properties": { "status": { "const": "expired-by-observed-lifetime" }, "targetStorageId": { "type": "string" }, "provenance": { "$ref": "#/$defs/provenance" } } },
+      { "type": "object", "additionalProperties": false, "required": ["status", "reason", "provenance"], "properties": { "status": { "const": "unknown" }, "reason": { "type": "string" }, "provenance": { "const": "unknown" } } }
+    ] },
+    "value": { "oneOf": [
+      { "type": "object", "additionalProperties": false, "required": ["kind", "display", "availability", "provenance"], "properties": { "kind": { "const": "scalar" }, "display": { "type": "string" }, "encoding": { "enum": ["decimal", "hex", "character", "boolean", "string", "other"] }, "availability": { "const": { "status": "available" } }, "provenance": { "$ref": "#/$defs/provenance" } } },
+      { "type": "object", "additionalProperties": false, "required": ["kind", "children", "availability", "provenance"], "properties": { "kind": { "const": "aggregate" }, "children": { "type": "array", "items": { "$ref": "#/$defs/variable" } }, "availability": { "const": { "status": "available" } }, "provenance": { "$ref": "#/$defs/provenance" } } },
+      { "type": "object", "additionalProperties": false, "required": ["kind", "elements", "extent", "availability", "provenance"], "properties": { "kind": { "const": "array" }, "elements": { "type": "array", "items": { "$ref": "#/$defs/variable" } }, "extent": { "oneOf": [{ "$ref": "#/$defs/evidence" }, { "type": "object", "required": ["status", "reason"], "properties": { "status": { "enum": ["unknown", "unavailable", "error"] }, "reason": { "type": "string" } } }] }, "availability": { "const": { "status": "available" } }, "provenance": { "$ref": "#/$defs/provenance" } } },
+      { "type": "object", "additionalProperties": false, "required": ["kind", "display", "addressValue", "resolution", "availability", "provenance"], "properties": { "kind": { "const": "pointer" }, "display": { "type": "string" }, "addressValue": { "oneOf": [{ "$ref": "#/$defs/evidence" }, { "type": "object", "required": ["status", "reason"], "properties": { "status": { "enum": ["unknown", "unavailable", "error"] }, "reason": { "type": "string" } } }] }, "resolution": { "$ref": "#/$defs/resolution" }, "availability": { "const": { "status": "available" } }, "provenance": { "$ref": "#/$defs/provenance" } } },
+      { "type": "object", "additionalProperties": false, "required": ["kind", "display", "target", "availability", "provenance"], "properties": { "kind": { "const": "reference" }, "display": { "type": "string" }, "target": { "$ref": "#/$defs/resolution" }, "availability": { "const": { "status": "available" } }, "provenance": { "$ref": "#/$defs/provenance" } } },
+      { "type": "object", "additionalProperties": false, "required": ["kind", "availability", "provenance"], "properties": { "kind": { "const": "unavailable" }, "availability": { "$ref": "#/$defs/availability" }, "provenance": { "$ref": "#/$defs/provenance" } } }
+    ] },
+    "variable": { "type": "object", "additionalProperties": false, "required": ["id", "role", "value"], "properties": { "id": { "type": "string", "minLength": 1 }, "name": { "oneOf": [{ "$ref": "#/$defs/evidence" }, { "$ref": "#/$defs/unknownField" }] }, "type": { "oneOf": [{ "$ref": "#/$defs/evidence" }, { "$ref": "#/$defs/unknownField" }] }, "role": { "enum": ["local", "parameter", "global", "member", "element", "other"] }, "storageId": { "type": "string" }, "address": { "$ref": "#/$defs/evidence" }, "value": { "$ref": "#/$defs/value" } } },
+    "unknownField": { "type": "object", "required": ["status", "reason"], "properties": { "status": { "enum": ["unknown", "unavailable", "error"] }, "reason": { "type": "string" } } },
+    "frame": { "type": "object", "additionalProperties": false, "required": ["id", "functionName", "location", "variables"], "properties": { "id": { "type": "string", "minLength": 1 }, "functionName": { "oneOf": [{ "$ref": "#/$defs/evidence" }, { "$ref": "#/$defs/unknownField" }] }, "location": { "$ref": "#/$defs/location" }, "variables": { "type": "array", "items": { "$ref": "#/$defs/variable" } } } },
+    "storage": { "type": "object", "additionalProperties": false, "required": ["id", "kind", "lifetime", "provenance"], "properties": { "id": { "type": "string", "minLength": 1 }, "kind": { "enum": ["stack", "global", "heap", "unknown"] }, "address": { "$ref": "#/$defs/evidence" }, "sizeBytes": { "$ref": "#/$defs/evidence" }, "type": { "$ref": "#/$defs/evidence" }, "lifetime": { "enum": ["live", "ended", "unknown"] }, "provenance": { "$ref": "#/$defs/provenance" }, "value": { "$ref": "#/$defs/value" } } },
+    "step": { "type": "object", "additionalProperties": false, "required": ["index", "location", "stop", "frames", "storage", "stdout", "stderr", "observations"], "properties": { "index": { "type": "integer", "minimum": 0 }, "location": { "$ref": "#/$defs/location" }, "stop": { "type": "object", "additionalProperties": false, "required": ["reason"], "properties": { "reason": { "enum": ["breakpoint", "step", "entry", "exit", "signal", "exception", "unknown"] }, "description": { "type": "string" } } }, "frames": { "type": "array", "items": { "$ref": "#/$defs/frame" } }, "storage": { "type": "array", "items": { "$ref": "#/$defs/storage" } }, "stdout": { "type": "string" }, "stderr": { "type": "string" }, "observations": { "type": "object", "additionalProperties": false, "required": ["completeness", "notes"], "properties": { "completeness": { "enum": ["partial", "unknown"] }, "notes": { "type": "array", "items": { "type": "string" } } } } }, "allOf": [{ "if": { "properties": { "location": { "properties": { "status": { "const": "known" } }, "required": ["status"] } } } }] },
+    "diagnostic": { "type": "object", "additionalProperties": false, "required": ["severity", "code", "message", "provenance"], "properties": { "severity": { "enum": ["info", "warning", "error"] }, "code": { "type": "string" }, "message": { "type": "string" }, "provenance": { "$ref": "#/$defs/provenance" }, "stepIndex": { "type": "integer", "minimum": 0 } } }
+  }
+}

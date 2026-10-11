@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "noEmit": true,
+    "baseUrl": ".",
+    "types": ["node"],
+    "typeRoots": ["../../frontend/node_modules/@types"],
+    "paths": {
+      "@visualized-gdb/execution-trace": ["../execution-trace/src/index.ts"]
+    }
+  },
+  "include": ["src/**/*", "../execution-trace/src/**/*"]
+}

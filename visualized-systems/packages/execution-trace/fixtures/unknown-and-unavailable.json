@@ -1,0 +1,96 @@
+{
+  "schemaVersion": "0.2",
+  "traceId": "fixture-unknown-values",
+  "source": {
+    "language": "cpp",
+    "text": "int main() {\n    int value;\n    int other = 7;\n    return 0;\n}"
+  },
+  "producer": {
+    "kind": "fixture",
+    "name": "unknown-values"
+  },
+  "outcome": "completed",
+  "steps": [
+    {
+      "index": 0,
+      "location": {
+        "status": "known",
+        "line": {
+          "value": 2,
+          "provenance": "fixture-authored"
+        }
+      },
+      "stop": {
+        "reason": "breakpoint"
+      },
+      "frames": [
+        {
+          "id": "frame-main-0",
+          "functionName": {
+            "value": "main",
+            "provenance": "fixture-authored"
+          },
+          "location": {
+            "status": "known",
+            "line": {
+              "value": 2,
+              "provenance": "fixture-authored"
+            }
+          },
+          "variables": [
+            {
+              "id": "var-main-value",
+              "name": {
+                "value": "value",
+                "provenance": "fixture-authored"
+              },
+              "type": {
+                "value": "int",
+                "provenance": "fixture-authored"
+              },
+              "role": "local",
+              "value": {
+                "kind": "unavailable",
+                "availability": {
+                  "status": "unknown",
+                  "reason": "The source declares no initializer; the runtime value is indeterminate and is intentionally not shown."
+                },
+                "provenance": "unknown"
+              }
+            },
+            {
+              "id": "var-main-other",
+              "name": {
+                "value": "other",
+                "provenance": "fixture-authored"
+              },
+              "type": {
+                "value": "int",
+                "provenance": "fixture-authored"
+              },
+              "role": "local",
+              "value": {
+                "kind": "unavailable",
+                "availability": {
+                  "status": "unavailable",
+                  "reason": "Debugger did not provide a value at this stop."
+                },
+                "provenance": "debugger-observed"
+              }
+            }
+          ]
+        }
+      ],
+      "storage": [],
+      "stdout": "",
+      "stderr": "",
+      "observations": {
+        "completeness": "partial",
+        "notes": [
+          "Unknown semantic value and debugger-unavailable value are distinct states."
+        ]
+      }
+    }
+  ],
+  "diagnostics": []
+}
