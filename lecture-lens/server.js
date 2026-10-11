@@ -11,6 +11,21 @@ const WEB = path.join(__dirname, 'website');
 const MODELS = { fast: 'claude-haiku-5-5', smart: 'claude-sonnet-5-5' };
 const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css' };
 
+// mode "ast_explain": bilingual, line-by-line walkthrough of a code or maths snippet (used by Visualized Systems)
+function astExplainPrompt({ snippet, kind = 'code', nativeLanguage = 'Spanish' }) {
+  const isMath = kind === 'math';
+  const numbered = snippet.split('\n').map((line, i) => `${i + 1}| ${line}`).join('\n');
+  return {
+    system: `You are a patient tutor for international university students. Reply with ONLY one JSON object. No markdown, no code fences, no extra text.
+Shape: {"eli5":{"english":"...","native":"..."},"steps":[{"line":1,"code":"...","english":"...","native":"..."}]}
+- "eli5": what the whole snippet does, explained as if to a 5-year-old, in 2 to 4 short sentences. "english" is plain English; "native" says the same thing in ${nativeLanguage}.
+- "steps": one entry per meaningful line, in order. "line" is the 1-based number shown before "|". "code" is that line's text without the number. "english" says in one or two plain sentences what this ${isMath ? 'transformation does to the graph (shift, stretch, reflection...)' : 'execution step changes in memory (variables, pointers, the stack and heap)'}; "native" says the same in ${nativeLanguage}.
+- Skip blank lines, comments and lines with only a brace.
+- Plain text only. No LaTeX; write maths like x^2, sqrt(x), 3/4.`,
+    prompt: `${isMath ? 'Explain these equations' : 'Explain this code (detect its programming language)'}:\n\n${numbered}`
+  };
+}
+
 http.createServer(async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Headers', 'content-type');
@@ -28,7 +43,17 @@ http.createServer(async (req, res) => {
           return res.end(JSON.stringify({ error: 'Request too large' }));
         }
       }
-      const { tier = 'fast', system, prompt, max_tokens = 1000, image, images } = JSON.parse(body);
+      const request = JSON.parse(body);
+      const { tier = 'fast', image, images } = request;
+      let { system, prompt, max_tokens = 1000 } = request;
+      if (request.mode === 'ast_explain') {
+        if (typeof request.snippet !== 'string' || !request.snippet.trim()) {
+          res.statusCode = 400;
+          return res.end(JSON.stringify({ error: 'ast_explain needs a non-empty "snippet" string.' }));
+        }
+        ({ system, prompt } = astExplainPrompt(request));
+        max_tokens = Math.max(max_tokens, 3000);
+      }
       const ALLOWED_IMAGES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
       const valid = (im) => im && typeof im.base64 === 'string' && ALLOWED_IMAGES.includes(im.media_type);
       // `images` (several pictures, used by the quiz) or `image` (one picture, used by the snip card)

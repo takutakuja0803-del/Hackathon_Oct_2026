@@ -1,0 +1,37 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Bridge</title>
+  <!-- MV3 blocks remote scripts, so this is Tailwind's prebuilt stylesheet rather than the Play CDN script. -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css">
+</head>
+<body class="w-72 p-4 font-sans text-gray-800">
+  <h1 class="text-lg font-semibold">Bridge</h1>
+
+  <button id="capture" class="mt-4 w-full rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700">
+    Start Lecture Capture
+  </button>
+  <p id="captureStatus" class="mt-2 text-xs text-gray-500">Not capturing.</p>
+
+  <section class="mt-6 border-t border-gray-200 pt-4">
+    <h2 class="text-sm font-semibold">Settings</h2>
+    <label for="targetLanguage" class="mt-3 block text-xs font-medium text-gray-600">Target language</label>
+    <select id="targetLanguage" class="mt-1 w-full rounded-md border border-gray-300 px-2 py-1 text-sm">
+      <option>Spanish</option>
+      <option>Mandarin Chinese</option>
+      <option>Hindi</option>
+      <option>Arabic</option>
+      <option>French</option>
+      <option>Portuguese</option>
+      <option>Korean</option>
+      <option>Japanese</option>
+      <option>Vietnamese</option>
+      <option>English</option>
+    </select>
+    <p id="saved" class="mt-2 h-4 text-xs text-green-600"></p>
+  </section>
+
+  <script src="popup.js"></script>
+</body>
+</html>

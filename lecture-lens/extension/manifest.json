@@ -9,7 +9,8 @@
     "unlimitedStorage"
   ],
   "host_permissions": [
-    "http://localhost:5173/*"
+    "http://localhost:5173/*",
+    "http://localhost:5174/*"
   ],
   "background": {
     "service_worker": "background.js"

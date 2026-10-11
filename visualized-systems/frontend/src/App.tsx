@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { GOLDEN_FIXTURES, type FixtureDescriptor } from "./fixtures";
 import { EQUATION_FIXTURES, type EquationFixture } from "./fixtures/equationFixtures";
 import type { ExecutionTrace } from "@visualized-gdb/execution-trace";
@@ -8,9 +8,16 @@ import { presentChanges } from "./utils/memoryPresentation";
 import { requestLiveTrace } from "./services/liveTracer";
 import {
   checkUrlCodeParam,
+  normalizeMathSnippet,
   registerPostMessageListener,
   type ExternalCodePayload,
 } from "./utils/extensionBridge";
+import {
+  DEFAULT_API_BASE,
+  loadScaffoldLanguage,
+  saveScaffoldLanguage,
+} from "./services/scaffold";
+import { ScaffoldPanel, useScaffold } from "./components/ScaffoldPanel/ScaffoldPanel";
 import { Header, type ProductMode } from "./components/Header/Header";
 import { CodeEditor } from "./components/CodeEditor/CodeEditor";
 import { VisualMemoryCanvas } from "./components/MemoryView/VisualMemoryCanvas";
@@ -83,9 +90,52 @@ export function App() {
     return () => clearInterval(t);
   }, [gdbPlaying, gdbSpeed, trace, productMode]);
 
+  // ==========================================
+  // Cognitive Scaffold (shared by both modes)
+  // ==========================================
+  const [initialImport] = useState(() => checkUrlCodeParam());
+  const [apiBase] = useState(() => initialImport?.apiBase ?? DEFAULT_API_BASE);
+  const [scaffoldLanguage, setScaffoldLanguage] = useState(() =>
+    loadScaffoldLanguage(initialImport?.language),
+  );
+  const [scaffoldOpen, setScaffoldOpen] = useState(true);
+  const scaffold = useScaffold(apiBase);
+  const languageRef = useRef(scaffoldLanguage);
+
+  const changeScaffoldLanguage = (language: string) => {
+    languageRef.current = language;
+    setScaffoldLanguage(language);
+    saveScaffoldLanguage(language);
+  };
+
+  // Incoming snippets fill the editor right away. Equations are pure maths and get
+  // graphed immediately; C++ is compiled and run natively, so it waits for a click.
+  const applyImport = (payload: ExternalCodePayload) => {
+    if (payload.language) changeScaffoldLanguage(payload.language);
+    const language = languageRef.current;
+    if (payload.mode === "equations") {
+      const code = normalizeMathSnippet(payload.code);
+      setProductMode("equations");
+      setEqCode(code);
+      handleUpdateEquationTrace(code);
+      scaffold.explain("math", code, language);
+    } else {
+      setProductMode("gdb");
+      setLiveCode(payload.code);
+      setLiveTrace(null);
+      setIsLiveMode(true);
+      setGdbIndex(0);
+      setGdbPlaying(false);
+      setDiagnosticError(null);
+      scaffold.explain("code", payload.code, language);
+    }
+    setScaffoldOpen(true);
+    setImported(payload);
+  };
+
   useEffect(() => {
-    setImported(checkUrlCodeParam());
-    return registerPostMessageListener(setImported);
+    if (initialImport) applyImport(initialImport);
+    return registerPostMessageListener(applyImport);
   }, []);
 
   const selectFixture = (f: FixtureDescriptor) => {
@@ -180,6 +230,46 @@ export function App() {
   }, [eqPlaying, eqTrace, productMode]);
 
   const currentEquationStep = eqTrace.steps[eqIndex];
+  const awaitingRun = isLiveMode && !liveTrace;
+
+  const importNotice = imported && (
+    <div className="import-notice" role="status">
+      {imported.mode === "equations"
+        ? "Equations received from Lecture Lens and graphed below."
+        : "Code received from Lecture Lens is in the editor. Check it, then run it to see memory step by step."}
+      {imported.mode !== "equations" && productMode === "gdb" && (
+        <button onClick={() => handleVisualize()} disabled={isVisualizing}>
+          {isVisualizing ? "Running…" : "Run & visualize"}
+        </button>
+      )}
+      <button onClick={() => setImported(null)}>Dismiss</button>
+    </div>
+  );
+
+  const scaffoldKind = productMode === "equations" ? "math" : "code";
+  const scaffoldSnippet =
+    productMode === "equations" ? eqCode : isLiveMode ? liveCode : trace.source.text;
+  const scaffoldPanel = (
+    <ScaffoldPanel
+      kind={scaffoldKind}
+      snippet={scaffoldSnippet}
+      activeLine={
+        productMode === "equations"
+          ? currentEquationStep?.sourceLine
+          : awaitingRun
+            ? undefined
+            : gdbLine
+      }
+      language={scaffoldLanguage}
+      onLanguageChange={changeScaffoldLanguage}
+      status={scaffold.status[scaffoldKind]}
+      onExplain={(language) => scaffold.explain(scaffoldKind, scaffoldSnippet, language)}
+      open={scaffoldOpen}
+      onToggle={() => setScaffoldOpen((o) => !o)}
+    />
+  );
+  const lessonClass = scaffoldOpen ? "lesson with-scaffold" : "lesson";
+  const rowClass = scaffoldOpen ? "workspace-row" : "workspace-row scaffold-collapsed";
 
   return (
     <div className="app-shell">
@@ -201,34 +291,13 @@ export function App() {
         /* ==========================================
            VISUALIZED GDB MODE
            ========================================== */
-        <main className="lesson">
+        <main className={lessonClass}>
           <div className="lesson-intro">
             <p className="eyebrow">C++ · A visual memory textbook</p>
             <h1>See what your code changes.</h1>
             <p>Follow a value. Trace a pointer. One step at a time.</p>
           </div>
-          {imported && (
-            <div className="import-notice">
-              {imported.mode === "equations" ? "Equation" : "Code"} received from {imported.source}.
-              <button
-                onClick={() => {
-                  if (imported.mode === "equations") {
-                    setProductMode("equations");
-                    setEqCode(imported.code);
-                    handleUpdateEquationTrace(imported.code);
-                  } else {
-                    setLiveCode(imported.code);
-                    setIsLiveMode(true);
-                    handleVisualize(imported.code);
-                  }
-                  setImported(null);
-                }}
-              >
-                Visualize this {imported.mode === "equations" ? "equation" : "code"}
-              </button>
-              <button onClick={() => setImported(null)}>Dismiss</button>
-            </div>
-          )}
+          {importNotice}
           {diagnosticError && (
             <div className="diagnostic-notice" role="alert">
               <span>
@@ -237,6 +306,7 @@ export function App() {
               <button onClick={() => setDiagnosticError(null)}>Dismiss</button>
             </div>
           )}
+          <div className={rowClass}>
           <section className="workspace" aria-label="Interactive memory lesson">
             <div className="workspace-heading">
               <div>
@@ -257,7 +327,7 @@ export function App() {
                 </div>
                 <CodeEditor
                   sourceCode={isLiveMode ? liveCode : trace.source.text}
-                  activeLine={gdbLine}
+                  activeLine={awaitingRun ? 0 : gdbLine}
                   fileName={
                     isLiveMode
                       ? "main.cpp"
@@ -280,15 +350,21 @@ export function App() {
                   <h2>Memory, right now</h2>
                   <span>Step {gdbIndex + 1}</span>
                 </div>
-                <VisualMemoryCanvas
-                  currentStep={step}
-                  activeDeltaTargetIds={presentation.changed}
-                  slots={slots}
-                  dense={trace.steps.some(
-                    (s) =>
-                      s.frames.reduce((n, f) => n + f.variables.length, 0) > 4,
-                  )}
-                />
+                {awaitingRun ? (
+                  <div className="empty-graph-notice">
+                    Press “Run & visualize” to compile this code and watch its memory change.
+                  </div>
+                ) : (
+                  <VisualMemoryCanvas
+                    currentStep={step}
+                    activeDeltaTargetIds={presentation.changed}
+                    slots={slots}
+                    dense={trace.steps.some(
+                      (s) =>
+                        s.frames.reduce((n, f) => n + f.variables.length, 0) > 4,
+                    )}
+                  />
+                )}
               </section>
             </div>
             <div className="change-story" aria-live="polite">
@@ -361,6 +437,8 @@ export function App() {
               </details>
             </div>
           </section>
+          {scaffoldPanel}
+          </div>
           <footer className="page-footer">
             <span>Visualized GDB · Original design: Takumi Naito</span>
             <span>Values first. Details when you need them.</span>
@@ -370,34 +448,13 @@ export function App() {
         /* ==========================================
            VISUALIZED EQUATIONS MODE
            ========================================== */
-        <main className="lesson">
+        <main className={lessonClass}>
           <div className="lesson-intro">
             <p className="eyebrow">Mathematics · A visual transformation textbook</p>
             <h1>See what each equation transforms.</h1>
             <p>Trace functions step by step. See shifts, reflections, and scalings in real time.</p>
           </div>
-          {imported && (
-            <div className="import-notice">
-              {imported.mode === "equations" ? "Equation" : "Code"} received from {imported.source}.
-              <button
-                onClick={() => {
-                  if (imported.mode === "equations") {
-                    setEqCode(imported.code);
-                    handleUpdateEquationTrace(imported.code);
-                  } else {
-                    setProductMode("gdb");
-                    setLiveCode(imported.code);
-                    setIsLiveMode(true);
-                    handleVisualize(imported.code);
-                  }
-                  setImported(null);
-                }}
-              >
-                Visualize this {imported.mode === "equations" ? "equation" : "code"}
-              </button>
-              <button onClick={() => setImported(null)}>Dismiss</button>
-            </div>
-          )}
+          {importNotice}
 
           {eqTrace.diagnostics.length > 0 && (
             <div className="diagnostic-notice" role="alert">
@@ -407,6 +464,7 @@ export function App() {
             </div>
           )}
 
+          <div className={rowClass}>
           <section className="workspace" aria-label="Interactive mathematical equation lesson">
             <div className="workspace-heading">
               <div>
@@ -504,6 +562,8 @@ export function App() {
               </details>
             </div>
           </section>
+          {scaffoldPanel}
+          </div>
 
           <footer className="page-footer">
             <span>Visualized Equations · Original design: Takumi Naito</span>

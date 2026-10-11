@@ -1,0 +1,24 @@
+{
+  "manifest_version": 3,
+  "name": "Bridge",
+  "version": "0.1.0",
+  "description": "Highlight text for a simple explanation, study notes, and a diagram in your language.",
+  "permissions": ["activeTab", "storage", "scripting"],
+  "host_permissions": ["http://localhost:3001/*"],
+  "externally_connectable": {
+    "matches": ["http://localhost/*", "http://127.0.0.1/*"]
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"]
+    }
+  ],
+  "action": {
+    "default_title": "Bridge",
+    "default_popup": "popup.html"
+  }
+}

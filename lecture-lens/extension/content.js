@@ -79,6 +79,48 @@ function looksLikeProblem(text) {
   return expr.test(s) || cue.test(s);
 }
 
+// Source code (C++, Java, C...) that Visualized Systems can step through in memory
+function looksLikeCode(text) {
+  const s = String(text || '');
+  if (s.length < 6) return false;
+  const strong = [
+    /^\s*#include\b/m,
+    /\bstd::|\bcout\s*<<|\bcin\s*>>|\bSystem\.out\.|\bprintf\s*\(/,
+    /\b(int|void|char|double|float|bool|auto|long|unsigned|const|string|String)\s+[*&]?\s*[A-Za-z_]\w*\s*(=|;|\(|\[|,)/,
+    /\b(public|private|protected)\s+(static\s+)?(class|void|int|String)\b/,
+    /\w\s*->\s*\w|\w\+\+|\+\+\w|\bnew\s+[A-Z]?\w+\s*[(\[]|\bdelete\s+\w/,
+    /\breturn\b[^;\n]*;/
+  ];
+  if (strong.some(re => re.test(s))) return true;
+  return /[{}]/.test(s) && /;\s*$/m.test(s);
+}
+
+// An equation or function definition that can be graphed step by step
+function looksLikeMath(text) {
+  const s = String(text || '').trim();
+  if (s.length < 3 || s.length > 600) return false;
+  if (/\\(frac|sqrt|sin|cos|tan|cdot|times|left|right|pi)\b|\$[^$]+\$|\\\(|\\\[/.test(s)) return true;
+  return /^\s*([a-z]\s*\(\s*x\s*\)|y)\s*=\s*\S*x/im.test(s);
+}
+
+// 'gdb' for code, 'math' for equations, null when there is nothing to visualize
+function visualizeMode(text) {
+  if (looksLikeCode(text)) return 'gdb';
+  if (looksLikeMath(text)) return 'math';
+  return null;
+}
+
+async function sendToVisualizer(text, mode) {
+  try {
+    const resp = await chrome.runtime.sendMessage({ type: 'VISUALIZE_SNIPPET', payload: text, mode });
+    if (!resp || !resp.ok) throw new Error(resp?.error || 'Could not open Visualized Systems.');
+    removePopup();
+  } catch (e) {
+    showError(/context invalidated/i.test(e.message)
+      ? 'The extension was reloaded. Refresh this page and try again.' : e.message);
+  }
+}
+
 let popupContainer = null;
 let shadowRoot = null;
 let wrap = null;          // the positioned box inside the shadow root
@@ -119,7 +161,7 @@ function getOrCreatePopup() {
         position: fixed; pointer-events: auto; color-scheme: light;
         font: 14px/1.5 system-ui, -apple-system, sans-serif;
       }
-      .ll-btnrow { display: flex; gap: 6px; }
+      .ll-btnrow { display: flex; flex-wrap: wrap; gap: 6px; }
       .ll-btn {
         display: inline-flex; align-items: center; gap: 6px;
         background: #2b50e6; color: #fff; border: 2px solid #fff; border-radius: 20px;
@@ -129,6 +171,9 @@ function getOrCreatePopup() {
       .ll-btn:hover { background: #1f3bb3; transform: scale(1.04); }
       .ll-btn.alt { background: #0f766e; }
       .ll-btn.alt:hover { background: #0b5a54; }
+      .ll-btn.viz { background: #7c3aed; }
+      .ll-btn.viz:hover { background: #6d28d9; }
+      .ll-action-btn.viz { width: 100%; margin-top: 8px; background: #f5f3ff; color: #5b21b6; border-color: #ddd6fe; }
       .ll-card {
         width: 380px; max-width: calc(100vw - 20px);
         background: #ffffff; color: #14213d; border-radius: 12px;
@@ -303,9 +348,11 @@ document.addEventListener('mouseup', (e) => {
   const selection = window.getSelection();
   const selectedText = selection ? selection.toString().trim() : '';
   const hasCjk = /[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]/.test(selectedText);
+  const vizMode = visualizeMode(selectedText);
+  const maxLength = vizMode === 'gdb' ? 4000 : 600;
 
   clearTimeout(selTimer);
-  if (!selectedText || (selectedText.length < 2 && !hasCjk) || selectedText.length > 600 || !selection.rangeCount) {
+  if (!selectedText || (selectedText.length < 2 && !hasCjk) || selectedText.length > maxLength || !selection.rangeCount) {
     removePopup();
     return;
   }
@@ -324,11 +371,14 @@ document.addEventListener('mouseup', (e) => {
     const box = render(`
       <div class="ll-btnrow">
         <button class="ll-btn" id="ll-explain-btn">✨ Explain</button>
-        ${looksLikeProblem(selectedText) ? '<button class="ll-btn alt" id="ll-solve-btn">🧮 Solve</button>' : ''}
+        ${vizMode !== 'gdb' && looksLikeProblem(selectedText) ? '<button class="ll-btn alt" id="ll-solve-btn">🧮 Solve</button>' : ''}
+        ${vizMode ? '<button class="ll-btn viz" id="ll-viz-btn">📊 Visualize Execution / Graph</button>' : ''}
         <button class="ll-btn" id="ll-auto-on" title="Open the explanation automatically whenever I highlight text">⚡ Auto</button>
       </div>
     `);
     box.querySelector('#ll-explain-btn').addEventListener('click', () => openCard({ term: selectedText, mode: 'auto' }));
+    const vizBtn = box.querySelector('#ll-viz-btn');
+    if (vizBtn) vizBtn.addEventListener('click', () => sendToVisualizer(selectedText, vizMode));
     const solveBtn = box.querySelector('#ll-solve-btn');
     if (solveBtn) solveBtn.addEventListener('click', () => openCard({ term: selectedText, mode: 'solve' }));
     box.querySelector('#ll-auto-on').addEventListener('click', async () => {
@@ -547,7 +597,8 @@ async function openCard({ term = null, image = null, mode = 'auto' }) {
 
   // Work out what the person needs: a clear problem goes straight to Solve, everything else starts as Translate
   const autoMode = mode === 'auto';
-  if (autoMode) mode = (term && looksLikeProblem(term)) ? 'solve' : 'translate';
+  const vizMode = term ? visualizeMode(term) : null;
+  if (autoMode) mode = (term && vizMode !== 'gdb' && looksLikeProblem(term)) ? 'solve' : 'translate';
   let userPicked = !autoMode;
 
   const highlightedHtml = image
@@ -607,11 +658,14 @@ async function openCard({ term = null, image = null, mode = 'auto' }) {
       <button class="ll-action-btn primary" id="ll-save-btn" disabled>💾 Save Word</button>
       <button class="ll-action-btn" id="ll-quiz-btn">📝 Quiz</button>
     </div>
+    ${vizMode ? '<button class="ll-action-btn viz" id="ll-viz-btn">📊 Visualize Execution / Graph</button>' : ''}
     ${image ? '' : '<button class="ll-link" id="ll-auto-off">Stop opening automatically when I highlight text</button>'}
   `));
   wireCard(box);
 
   const $ = (id) => box.querySelector(id);
+  const vizBtn = $('#ll-viz-btn');
+  if (vizBtn) vizBtn.onclick = () => sendToVisualizer(term, vizMode);
   const tabs = [...box.querySelectorAll('.ll-tab')];
   const paneT = $('#ll-pane-translate'), paneS = $('#ll-pane-solve');
   const saveBtn = $('#ll-save-btn');

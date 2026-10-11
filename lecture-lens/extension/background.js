@@ -35,9 +35,58 @@ chrome.commands.onCommand.addListener(async (command, tab) => {
 });
 
 // ------------------------------------------------------------
+// Visualized Systems: open a highlighted code / maths snippet in the visualizer
+// ------------------------------------------------------------
+const VISUALIZER_URL = 'http://localhost:5174';
+
+function toBase64(text) {
+  const bytes = new TextEncoder().encode(text);
+  let bin = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
+
+async function openVisualizer(snippet, mode) {
+  const { visualizerUrl, siteUrl, native } = await chrome.storage.local.get({
+    visualizerUrl: VISUALIZER_URL, siteUrl: 'http://localhost:5173', native: null
+  });
+  const base = visualizerUrl.replace(/\/+$/, '');
+  const params = new URLSearchParams({ from: 'lecture-lens', enc: 'b64', api: siteUrl.replace(/\/+$/, '') });
+  if (mode === 'math') {
+    params.set('mode', 'equations');
+    params.set('eq', toBase64(snippet));
+  } else {
+    params.set('mode', 'gdb');
+    params.set('code', toBase64(snippet));
+  }
+  if (native) params.set('lang', native);
+  const url = `${base}/?${params}`;
+
+  const existing = await chrome.tabs.query({ url: `${base}/*` });
+  if (existing.length) {
+    await chrome.tabs.update(existing[0].id, { active: true, url });
+    await chrome.windows.update(existing[0].windowId, { focused: true });
+  } else {
+    await chrome.tabs.create({ url });
+  }
+}
+
+// ------------------------------------------------------------
 // Messages from content.js
 // ------------------------------------------------------------
 chrome.runtime.onMessage.addListener((req, sender, sendResponse) => {
+
+  if (req.type === 'VISUALIZE_SNIPPET') {
+    const snippet = String(req.payload || '');
+    if (!snippet.trim()) {
+      sendResponse({ ok: false, error: 'Nothing was highlighted.' });
+      return false;
+    }
+    openVisualizer(snippet, req.mode === 'math' ? 'math' : 'gdb')
+      .then(() => sendResponse({ ok: true }))
+      .catch((e) => sendResponse({ ok: false, error: e.message }));
+    return true;
+  }
 
   if (req.type === 'open_hub') {
     openHub(req.tab);

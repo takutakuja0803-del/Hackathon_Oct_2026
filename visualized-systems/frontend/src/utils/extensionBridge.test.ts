@@ -1,9 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   checkUrlCodeParam,
+  normalizeMathSnippet,
   registerPostMessageListener,
   type ExternalCodePayload,
 } from "./extensionBridge";
+import { traceEquations } from "@visualized-gdb/equation-trace";
 
 describe("Extension Bridge (Visualized Systems)", () => {
   let listeners: ((event: any) => void)[] = [];
@@ -93,5 +95,52 @@ describe("Extension Bridge (Visualized Systems)", () => {
     expect(received[1].mode).toBe("equations");
 
     cleanup();
+  });
+
+  it("decodes the Lecture Lens deep link: UTF-8 base64 ?eq=, language and local API", () => {
+    const eq = "y = x² − 3 // résumé";
+    const b64 = Buffer.from(eq, "utf-8").toString("base64");
+    const params = new URLSearchParams({
+      from: "lecture-lens",
+      enc: "b64",
+      api: "http://localhost:5173",
+      mode: "equations",
+      eq: b64,
+      lang: "French",
+    });
+    (globalThis as any).window.location = new URL(`http://localhost:5174/?${params}`);
+
+    const payload = checkUrlCodeParam();
+    expect(payload?.mode).toBe("equations");
+    expect(payload?.code).toBe(eq);
+    expect(payload?.language).toBe("French");
+    expect(payload?.apiBase).toBe("http://localhost:5173");
+  });
+
+  it("ignores a non-local API server in the URL", () => {
+    (globalThis as any).window.location = new URL(
+      "http://localhost:5174/?code=" + encodeURIComponent("int x = 1;") + "&api=https://example.com"
+    );
+    expect(checkUrlCodeParam()?.apiBase).toBeUndefined();
+  });
+
+  it("accepts the VISUALIZE_SNIPPET postMessage shape", () => {
+    const received: ExternalCodePayload[] = [];
+    const cleanup = registerPostMessageListener((p) => received.push(p));
+    listeners.forEach((fn) =>
+      fn({ data: { type: "VISUALIZE_SNIPPET", payload: "f(x) = x^2", mode: "math" } })
+    );
+    expect(received[0]).toMatchObject({ code: "f(x) = x^2", mode: "equations" });
+    cleanup();
+  });
+
+  it("normalizes highlighted LaTeX and y = ... lines into traceable equations", () => {
+    const input = "$y = \\frac{1}{2}x^2$\ny = \\sin(x) \\cdot 3\ng(x) = x + 1";
+    const out = normalizeMathSnippet(input);
+    expect(out.split("\n")).toHaveLength(3);
+    expect(out).toBe("f(x) = (1)/(2)x^2\nh(x) = sin(x) * 3\ng(x) = x + 1");
+    const trace = traceEquations(out);
+    expect(trace.diagnostics).toHaveLength(0);
+    expect(trace.steps).toHaveLength(3);
   });
 });

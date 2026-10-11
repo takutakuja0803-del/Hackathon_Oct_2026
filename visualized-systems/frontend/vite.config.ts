@@ -93,6 +93,7 @@ export default defineConfig({
     },
   },
   server: {
-    port: 5173,
+    // 5173 is taken by the Lecture Lens server, which also answers /api/llm
+    port: 5174,
   },
 });

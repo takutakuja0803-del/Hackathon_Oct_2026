@@ -5,10 +5,35 @@ label{display:block;margin:16px 0 4px;font-weight:600} input,select{width:100%;p
 button{margin-top:20px;background:#2b50e6;color:#fff;border:0;border-radius:6px;padding:10px 18px;font-size:15px;cursor:pointer}
 </style>
 <h1>Lecture Lens settings</h1>
-<label for="native">My language</label><input id="native" placeholder="Spanish, Mandarin, Hindi…">
+<label for="native">My language</label>
+<select id="native">
+  <option>Spanish</option>
+  <option>Mandarin Chinese</option>
+  <option>Hindi</option>
+  <option>Arabic</option>
+  <option>French</option>
+  <option>Portuguese</option>
+  <option>Korean</option>
+  <option>Japanese</option>
+  <option>Vietnamese</option>
+  <option>Russian</option>
+  <option>German</option>
+  <option>Tagalog</option>
+  <option>Bengali</option>
+  <option>Urdu</option>
+  <option>Persian</option>
+  <option>Turkish</option>
+  <option>Italian</option>
+  <option>Polish</option>
+  <option>Ukrainian</option>
+  <option>English</option>
+  <option>Other</option>
+</select>
+<input id="nativeCustom" hidden placeholder="Type your language">
 <label for="level">My English level</label>
 <select id="level"><option>beginner</option><option>intermediate</option><option>advanced</option></select>
 <label for="subject">Course or subject</label><input id="subject" placeholder="Economics, Nursing, Computer Science…">
 <label for="siteUrl">Review site address</label><input id="siteUrl">
+<label for="visualizerUrl">Visualized Systems address</label><input id="visualizerUrl">
 <button id="save">Save settings</button> <span id="ok" role="status"></span>
 <script src="options.js"></script>
