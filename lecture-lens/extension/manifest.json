@@ -1,11 +1,12 @@
 {
   "manifest_version": 3,
   "name": "Lecture Lens",
-  "version": "0.1.0",
-  "description": "Highlight confusing text for a plain-English explanation. Review notes and quizzes on the Lecture Lens site.",
+  "version": "0.4.0",
+  "description": "Highlight confusing text for a plain-English explanation. Review your history, study guides and quizzes by topic.",
   "permissions": [
     "storage",
-    "contextMenus"
+    "activeTab",
+    "unlimitedStorage"
   ],
   "host_permissions": [
     "http://localhost:5173/*"
@@ -13,29 +14,32 @@
   "background": {
     "service_worker": "background.js"
   },
+  "commands": {
+    "start-snip": {
+      "suggested_key": {
+        "default": "Alt+Shift+S"
+      },
+      "description": "Highlight any text, image or problem to understand it"
+    },
+    "start-snip-solve": {
+      "suggested_key": {
+        "default": "Alt+Shift+Q"
+      },
+      "description": "Highlight a problem and solve it step by step"
+    }
+  },
   "content_scripts": [
     {
       "matches": [
         "<all_urls>"
       ],
-      "exclude_matches": [
-        "http://localhost:5173/*"
-      ],
       "js": [
         "content.js"
-      ]
-    },
-    {
-      "matches": [
-        "http://localhost:5173/*"
-      ],
-      "js": [
-        "bridge.js"
       ]
     }
   ],
   "options_page": "options.html",
   "action": {
-    "default_title": "Open Lecture Lens review"
+    "default_title": "Open Lecture Lens history & quiz"
   }
 }

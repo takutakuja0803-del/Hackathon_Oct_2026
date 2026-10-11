@@ -1,0 +1,632 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lecture Lens Hub</title>
+<style>
+  :root {
+    --bg: #f4f6fb; --panel: #ffffff; --ink: #14213d; --muted: #64748b; --line: #e2e8f0;
+    --brand: #2b50e6; --brand-dark: #1f3bb3; --brand-soft: #eef2ff;
+    --good: #15803d; --good-soft: #ecfdf5; --bad: #b91c1c; --bad-soft: #fef2f2; --warn-soft: #fffbeb;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  .app { display: grid; grid-template-columns: 270px 1fr; min-height: 100vh; }
+  aside { background: var(--panel); border-right: 1px solid var(--line); padding: 20px 14px; position: sticky; top: 0; height: 100vh; overflow-y: auto; }
+  aside h1 { font-size: 18px; margin: 0 6px 4px; color: var(--brand); }
+  aside .sub { margin: 0 6px 16px; color: var(--muted); font-size: 12px; }
+  .topic {
+    display: flex; justify-content: space-between; align-items: center; gap: 8px; width: 100%;
+    text-align: left; padding: 8px 10px; margin-bottom: 4px; border: 1px solid transparent; border-radius: 8px;
+    background: none; color: var(--ink); font: 600 14px system-ui, sans-serif; cursor: pointer;
+  }
+  .topic:hover { background: var(--bg); }
+  .topic.active { background: var(--brand-soft); border-color: #c7d2fe; color: var(--brand-dark); }
+  .topic .left { display: flex; flex-direction: column; min-width: 0; }
+  .topic .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .topic small { font-weight: 500; color: var(--muted); font-size: 11px; }
+  .count { background: var(--bg); color: var(--muted); border-radius: 20px; padding: 1px 8px; font-size: 12px; font-weight: 700; }
+  .topic.active .count { background: #fff; color: var(--brand-dark); }
+  .side-actions { margin-top: 14px; display: grid; gap: 8px; }
+  main { padding: 24px 28px 60px; max-width: 980px; width: 100%; }
+  .top { display: flex; justify-content: space-between; align-items: flex-end; flex-wrap: wrap; gap: 12px; margin-bottom: 18px; }
+  .top h2 { margin: 0; font-size: 24px; }
+  .top p { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
+  .tabs { display: flex; gap: 6px; background: var(--panel); border: 1px solid var(--line); padding: 4px; border-radius: 10px; }
+  .tab { border: none; background: none; padding: 7px 14px; border-radius: 7px; font: 600 14px system-ui, sans-serif; color: var(--muted); cursor: pointer; }
+  .tab.active { background: var(--brand); color: #fff; }
+  button.primary, button.ghost {
+    padding: 8px 14px; border-radius: 8px; font: 600 14px system-ui, sans-serif; cursor: pointer; border: 1px solid var(--brand);
+  }
+  button.primary { background: var(--brand); color: #fff; }
+  button.primary:hover:not(:disabled) { background: var(--brand-dark); }
+  button.ghost { background: #fff; color: var(--brand-dark); border-color: #c7d2fe; }
+  button:disabled { opacity: 0.55; cursor: default; }
+  .status { margin: 0 0 14px; padding: 10px 14px; border-radius: 8px; font-size: 14px; }
+  .status.err { background: var(--bad-soft); color: var(--bad); border: 1px solid #fecaca; }
+  .status.info { background: var(--brand-soft); color: var(--brand-dark); border: 1px solid #c7d2fe; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; margin-bottom: 16px; }
+  .panel-head { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 10px; }
+  .empty { text-align: center; color: var(--muted); padding: 40px 20px; }
+  .search { width: 100%; padding: 9px 12px; border: 1px solid var(--line); border-radius: 8px; font: 14px system-ui, sans-serif; margin-bottom: 16px; background: #fff; }
+  .day { margin: 18px 0 8px; font-size: 12px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; margin-bottom: 10px; }
+  .card-top { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; flex-wrap: wrap; }
+  .badge { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 20px; background: var(--brand-soft); color: var(--brand-dark); }
+  .badge.solution { background: var(--good-soft); color: var(--good); }
+  .pill { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 20px; background: var(--bg); color: var(--muted); }
+  .date { margin-left: auto; font-size: 12px; color: var(--muted); }
+  .card h3 { margin: 0 0 6px; font-size: 16px; word-break: break-word; }
+  .trans { font-weight: 700; color: #1e3a8a; background: var(--brand-soft); border-radius: 6px; padding: 6px 10px; margin-bottom: 8px; word-break: break-word; }
+  .body { white-space: pre-wrap; color: #334155; font-size: 14px; word-break: break-word; }
+  .card-actions { display: flex; gap: 8px; margin-top: 10px; justify-content: flex-end; }
+  .card-actions select, .card-actions button { font: 600 12px system-ui, sans-serif; padding: 5px 9px; border: 1px solid var(--line); border-radius: 6px; background: #fff; color: var(--ink); cursor: pointer; }
+  .card-actions .del:hover { color: var(--bad); border-color: #fecaca; }
+  .guide h3 { margin: 22px 0 8px; font-size: 16px; color: var(--brand-dark); }
+  .guide h2 { margin: 0 0 6px; font-size: 22px; }
+  .guide ul { margin: 0; padding-left: 20px; }
+  .guide li { margin-bottom: 5px; }
+  .guide dt { font-weight: 700; margin-top: 8px; }
+  .guide dd { margin: 0 0 4px 0; color: #334155; }
+  .guide .ex { background: var(--bg); border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; }
+  .guide .meta { color: var(--muted); font-size: 12px; margin-top: 18px; }
+  .progress { height: 6px; background: var(--line); border-radius: 6px; overflow: hidden; margin-bottom: 14px; }
+  .progress > div { height: 100%; background: var(--brand); transition: width .2s; }
+  .q-count { font-size: 12px; font-weight: 700; color: var(--muted); letter-spacing: .04em; text-transform: uppercase; }
+  .q-text { font-size: 18px; font-weight: 700; margin: 6px 0 14px; white-space: pre-wrap; word-break: break-word; }
+  .opt {
+    display: block; width: 100%; text-align: left; padding: 11px 14px; margin-bottom: 8px; border: 1.5px solid var(--line);
+    border-radius: 10px; background: #fff; font: 15px system-ui, sans-serif; color: var(--ink); cursor: pointer; word-break: break-word;
+  }
+  .opt:hover:not(:disabled) { border-color: var(--brand); background: var(--brand-soft); }
+  .opt.correct { border-color: var(--good); background: var(--good-soft); }
+  .opt.wrong { border-color: var(--bad); background: var(--bad-soft); }
+  .opt:disabled { cursor: default; }
+  .explain { margin: 12px 0; padding: 10px 14px; border-radius: 8px; background: var(--warn-soft); color: #78350f; font-size: 14px; white-space: pre-wrap; }
+  .score { font-size: 42px; font-weight: 800; color: var(--brand); margin: 4px 0; }
+  .missed { border-left: 3px solid var(--bad); padding: 4px 0 4px 12px; margin: 12px 0; }
+  .missed .ans { color: var(--good); font-weight: 700; }
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 12px 0; }
+  .row select { padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; font: 14px system-ui, sans-serif; background: #fff; }
+  .hist { width: 100%; border-collapse: collapse; font-size: 14px; margin-top: 8px; }
+  .hist td, .hist th { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+  .hist th { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+  .muted { color: var(--muted); }
+  [hidden] { display: none !important; }
+  @media (max-width: 780px) {
+    .app { grid-template-columns: 1fr; }
+    aside { position: static; height: auto; border-right: none; border-bottom: 1px solid var(--line); }
+    main { padding: 18px 14px 50px; }
+  }
+  @media print {
+    aside, .tabs, .top p, .panel-head button, .status { display: none !important; }
+    .app { display: block; } main { padding: 0; max-width: none; }
+    .panel { border: none; padding: 0; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside>
+    <h1>📚 Lecture Lens</h1>
+    <p class="sub">Your learning history, by topic</p>
+    <div id="topics"></div>
+    <div class="side-actions">
+      <button class="ghost" id="rename-topic" hidden>✏️ Rename this topic</button>
+      <button class="ghost" id="refresh">🔄 Refresh</button>
+    </div>
+  </aside>
+
+  <main>
+    <div class="top">
+      <div>
+        <h2 id="title">All topics</h2>
+        <p id="subtitle"></p>
+      </div>
+      <nav class="tabs">
+        <button class="tab active" data-tab="history">🕘 History</button>
+        <button class="tab" data-tab="guide">📖 Study guide</button>
+        <button class="tab" data-tab="quiz">📝 Quiz</button>
+      </nav>
+    </div>
+
+    <div id="status" class="status" hidden></div>
+
+    <section id="tab-history"></section>
+    <section id="tab-guide" hidden></section>
+    <section id="tab-quiz" hidden></section>
+  </main>
+</div>
+
+<script>
+// ------------------------------------------------------------------
+// Helpers
+// ------------------------------------------------------------------
+const $ = (s, r = document) => r.querySelector(s);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const clip = (s, n) => { s = String(s ?? ''); return s.length > n ? s.slice(0, n) + '…' : s; };
+const UNSORTED = 'Unsorted';
+const ALL = '__all__';
+
+const store = {
+  get(k, d) { try { const v = JSON.parse(localStorage.getItem(k)); return v ?? d; } catch (_) { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (_) {} }
+};
+
+let items = [];          // saved items from the extension
+let scope = ALL;         // selected topic key (lowercase) or ALL
+let tab = 'history';
+let search = '';
+let quiz = null;         // running quiz state
+let busy = false;
+
+// ------------------------------------------------------------------
+// Talking to the extension (via bridge-hub.js) and the server
+// ------------------------------------------------------------------
+const pending = new Map();
+let seq = 0;
+window.addEventListener('message', (e) => {
+  if (e.source !== window || e.origin !== location.origin) return;
+  const m = e.data;
+  if (!m || m.source !== 'll-ext') return;
+  const cb = pending.get(m.replyTo);
+  if (cb) { pending.delete(m.replyTo); cb(m); }
+});
+
+function ext(type, data = {}) {
+  return new Promise((resolve, reject) => {
+    const id = ++seq;
+    const timer = setTimeout(() => {
+      pending.delete(id);
+      reject(new Error('Could not reach the Lecture Lens extension. Make sure it is installed and reloaded, then refresh this page.'));
+    }, 3000);
+    pending.set(id, (m) => { clearTimeout(timer); m.ok ? resolve(m) : reject(new Error(m.error || 'Extension error')); });
+    window.postMessage({ source: 'll-hub', id, type, ...data }, location.origin);
+  });
+}
+
+async function llm(payload) {
+  const r = await fetch('/api/llm', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) });
+  let d;
+  try { d = await r.json(); } catch (_) { throw new Error('The server sent an unexpected reply.'); }
+  if (!r.ok || d.error) throw new Error(d.error || 'Server error');
+  return d.text || '';
+}
+
+function parseJson(text) {
+  const c = String(text).replace(/```json|```/g, '');
+  return JSON.parse(c.slice(c.indexOf('{'), c.lastIndexOf('}') + 1));
+}
+
+function setStatus(msg, kind = 'info') {
+  const el = $('#status');
+  if (!msg) { el.hidden = true; return; }
+  el.hidden = false;
+  el.className = 'status ' + kind;
+  el.textContent = msg;
+}
+
+// ------------------------------------------------------------------
+// Topics
+// ------------------------------------------------------------------
+const topicLabel = (it) => (it.topic || '').trim() || UNSORTED;
+const topicKey = (it) => topicLabel(it).toLowerCase();
+
+function topicsList() {
+  const map = new Map();
+  for (const it of items) {
+    const k = topicKey(it);
+    if (!map.has(k)) map.set(k, { key: k, label: topicLabel(it), count: 0 });
+    map.get(k).count++;
+  }
+  return [...map.values()].sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
+}
+const scoped = () => scope === ALL ? items : items.filter(it => topicKey(it) === scope);
+const scopeLabel = () => scope === ALL ? 'All topics' : (topicsList().find(t => t.key === scope)?.label || scope);
+
+function lastQuiz(key) {
+  const h = store.get('ll_quiz_history', []).filter(q => q.key === key);
+  return h.length ? h[h.length - 1] : null;
+}
+
+// ------------------------------------------------------------------
+// Rendering: sidebar + header
+// ------------------------------------------------------------------
+function renderSidebar() {
+  const topics = topicsList();
+  const allQ = lastQuiz(ALL);
+  let html = `<button class="topic ${scope === ALL ? 'active' : ''}" data-key="${ALL}">
+      <span class="left"><span class="name">All topics</span>${allQ ? `<small>Last mixed quiz: ${pct(allQ)}%</small>` : ''}</span>
+      <span class="count">${items.length}</span></button>`;
+  for (const t of topics) {
+    const q = lastQuiz(t.key);
+    html += `<button class="topic ${scope === t.key ? 'active' : ''}" data-key="${esc(t.key)}">
+      <span class="left"><span class="name">${esc(t.label)}</span>${q ? `<small>Last quiz: ${pct(q)}%</small>` : ''}</span>
+      <span class="count">${t.count}</span></button>`;
+  }
+  $('#topics').innerHTML = html;
+  $('#rename-topic').hidden = scope === ALL;
+}
+const pct = (q) => Math.round((q.correct / q.n) * 100);
+
+function renderHeader() {
+  $('#title').textContent = scopeLabel();
+  const n = scoped().length;
+  $('#subtitle').textContent = `${n} saved item${n === 1 ? '' : 's'}`;
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+  for (const name of ['history', 'guide', 'quiz']) $('#tab-' + name).hidden = tab !== name;
+}
+
+function render() {
+  renderSidebar();
+  renderHeader();
+  if (tab === 'history') renderHistory();
+  if (tab === 'guide') renderGuide();
+  if (tab === 'quiz') renderQuiz();
+}
+
+function emptyState() {
+  return `<div class="panel empty"><div style="font-size:32px">🗂️</div>
+    <p><strong>Nothing saved here yet.</strong></p>
+    <p>Highlight something on any page, click <em>Explain</em> or <em>Solve</em>, choose a topic, and press <em>Save</em>. It will show up here.</p></div>`;
+}
+
+// ------------------------------------------------------------------
+// History tab
+// ------------------------------------------------------------------
+function dayLabel(ts) {
+  const d = new Date(ts || 0), now = new Date();
+  const start = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const diff = Math.round((start(now) - start(d)) / 86400000);
+  if (diff === 0) return 'Today';
+  if (diff === 1) return 'Yesterday';
+  return d.toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric', year: d.getFullYear() === now.getFullYear() ? undefined : 'numeric' });
+}
+
+function renderHistory() {
+  const root = $('#tab-history');
+  const all = scoped();
+  if (!items.length || !all.length) { root.innerHTML = emptyState(); return; }
+
+  const q = search.trim().toLowerCase();
+  const list = q ? all.filter(it => [it.word, it.translation, it.explanation, it.topic].join(' ').toLowerCase().includes(q)) : all;
+  const topics = topicsList();
+
+  let html = `<input class="search" id="search" type="search" placeholder="Search what you've learned..." value="${esc(search)}">`;
+  if (!list.length) html += `<div class="panel empty">No matches.</div>`;
+
+  let lastDay = '';
+  for (const it of list) {
+    const day = dayLabel(it.timestamp);
+    if (day !== lastDay) { html += `<div class="day">${esc(day)}</div>`; lastDay = day; }
+    const isSol = it.type === 'solution';
+    let body = it.explanation || '';
+    if (it.translation && body.startsWith(it.translation)) body = body.slice(it.translation.length).trim();
+    const time = it.timestamp ? new Date(it.timestamp).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }) : '';
+    const cur = topicLabel(it);
+    const options = topics.map(t => `<option value="${esc(t.label)}" ${t.key === topicKey(it) ? 'selected' : ''}>${esc(t.label)}</option>`).join('');
+    html += `<article class="card" data-id="${esc(it.id)}">
+      <div class="card-top">
+        <span class="badge ${isSol ? 'solution' : ''}">${isSol ? 'Problem' : 'Word / text'}</span>
+        <span class="pill">${esc(cur)}</span>
+        <span class="date">${esc(time)}</span>
+      </div>
+      <h3>${esc(clip(it.word, 160))}</h3>
+      ${it.translation ? `<div class="trans">${esc(it.translation)}</div>` : ''}
+      <div class="body">${esc(body)}</div>
+      <div class="card-actions">
+        <select class="move" title="Move to topic">${options}<option value="__new__">＋ New topic…</option></select>
+        <button class="del">Delete</button>
+      </div>
+    </article>`;
+  }
+  root.innerHTML = html;
+}
+
+async function mutate(type, data) {
+  try { await ext(type, data); await loadItems(true); } catch (e) { setStatus(e.message, 'err'); }
+}
+
+// ------------------------------------------------------------------
+// Study guide tab
+// ------------------------------------------------------------------
+const guideKey = () => 'll_guide:' + scope;
+
+function itemLines(list) {
+  return list.map(it =>
+    `- [${it.type === 'solution' ? 'solved problem' : 'word/text'}] "${clip(it.word, 200)}" => ${clip((it.explanation || '').replace(/\s+/g, ' '), 400)} (topic: ${topicLabel(it)})`
+  ).join('\n');
+}
+
+function renderGuide() {
+  const root = $('#tab-guide');
+  const list = scoped();
+  if (!list.length) { root.innerHTML = emptyState(); return; }
+  const cached = store.get(guideKey(), null);
+  root.innerHTML = `<div class="panel">
+    <div class="panel-head">
+      <div><strong>${esc(scopeLabel())}</strong> <span class="muted">· ${list.length} saved item${list.length === 1 ? '' : 's'}</span></div>
+      <div class="row" style="margin:0">
+        <button class="primary" id="gen-guide" ${busy ? 'disabled' : ''}>✨ ${cached ? 'Regenerate' : 'Generate'} study guide</button>
+        ${cached ? `<button class="ghost" id="print-guide">🖨 Print / save as PDF</button>` : ''}
+      </div>
+    </div>
+    <div id="guide-out" class="guide">${cached ? guideHtml(cached.g, cached) : `<p class="muted">Turn what you saved in this topic into a clear review sheet: key ideas, vocabulary, worked examples and tips.</p>`}</div>
+  </div>`;
+}
+
+function listHtml(arr) {
+  const a = (Array.isArray(arr) ? arr : []).filter(Boolean);
+  return a.length ? `<ul>${a.map(x => `<li>${esc(typeof x === 'string' ? x : Object.values(x).join(': '))}</li>`).join('')}</ul>` : '';
+}
+
+function guideHtml(g, meta) {
+  const vocab = (Array.isArray(g.vocabulary) ? g.vocabulary : []).filter(v => v && v.term);
+  const ex = (Array.isArray(g.worked_examples) ? g.worked_examples : []).filter(v => v && v.problem);
+  let h = `<h2>${esc(g.title || 'Study guide')}</h2>`;
+  if (g.summary) h += `<p>${esc(g.summary)}</p>`;
+  if (Array.isArray(g.key_ideas) && g.key_ideas.length) h += `<h3>Key ideas</h3>${listHtml(g.key_ideas)}`;
+  if (vocab.length) h += `<h3>Vocabulary</h3><dl>${vocab.map(v => `<dt>${esc(v.term)}</dt><dd>${esc(v.meaning || '')}</dd>`).join('')}</dl>`;
+  if (ex.length) h += `<h3>Worked examples</h3>${ex.map(v => `<div class="ex"><strong>${esc(v.problem)}</strong><div>${esc(v.approach || '')}</div></div>`).join('')}`;
+  if (Array.isArray(g.common_mistakes) && g.common_mistakes.length) h += `<h3>Common mistakes</h3>${listHtml(g.common_mistakes)}`;
+  if (Array.isArray(g.practice_tips) && g.practice_tips.length) h += `<h3>How to practice</h3>${listHtml(g.practice_tips)}`;
+  if (meta) h += `<div class="meta">Made from ${meta.count} item${meta.count === 1 ? '' : 's'} on ${new Date(meta.ts).toLocaleString()}. AI can make mistakes, so double-check important details.</div>`;
+  return h;
+}
+
+async function generateGuide() {
+  const list = scoped().slice(0, 40);
+  if (!list.length || busy) return;
+  busy = true;
+  const btn = $('#gen-guide'); if (btn) { btn.disabled = true; btn.textContent = 'Writing your study guide...'; }
+  setStatus('');
+  const multi = scope === ALL ? ' These items come from several topics, so group related ideas by topic and start each key idea with the topic name.' : '';
+  try {
+    const text = await llm({
+      tier: 'smart', max_tokens: 3000,
+      system: 'You are a clear, friendly tutor. Reply with ONLY one JSON object. No markdown, no code fences, no extra text. Write math in plain text (x^2, sqrt(16), 3/4), never LaTeX.',
+      prompt:
+`A student saved these items while studying "${scopeLabel()}". Write a study guide that helps them review what they learned.${multi}
+
+Items:
+${itemLines(list)}
+
+Return ONLY a JSON object with these keys:
+"title": a short title for the guide.
+"summary": 2 to 4 sentences on what this material is about.
+"key_ideas": array of 3 to 8 short strings, the main concepts to remember.
+"vocabulary": array of {"term": "...", "meaning": "..."} for important words from the items (empty array if none).
+"worked_examples": array of {"problem": "...", "approach": "..."} reusing the solved problems and explaining the method in 2 to 4 simple sentences (empty array if none).
+"common_mistakes": array of short strings (empty array if none).
+"practice_tips": array of 2 to 5 short strings.
+Use simple, clear English.`
+    });
+    const g = parseJson(text);
+    store.set(guideKey(), { g, count: list.length, ts: Date.now() });
+  } catch (e) {
+    setStatus('Could not make the study guide: ' + e.message, 'err');
+  }
+  busy = false;
+  if (tab === 'guide') renderGuide();
+}
+
+// ------------------------------------------------------------------
+// Quiz tab
+// ------------------------------------------------------------------
+function shuffle(a) { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
+
+function normalizeQ(q) {
+  if (!q || !q.question || !Array.isArray(q.options) || q.options.length < 2) return null;
+  const opts = q.options.slice(0, 4).map(String);
+  const ai = Number.isInteger(q.answer_index) ? q.answer_index : parseInt(q.answer_index, 10);
+  if (!(ai >= 0 && ai < opts.length)) return null;
+  const order = shuffle(opts.map((_, i) => i));
+  return {
+    question: String(q.question),
+    options: order.map(i => opts[i]),
+    answer: order.indexOf(ai),
+    explanation: q.explanation ? String(q.explanation) : ''
+  };
+}
+
+function renderQuiz() {
+  const root = $('#tab-quiz');
+  const list = scoped();
+  if (!list.length) { root.innerHTML = emptyState(); return; }
+  if (!quiz) { root.innerHTML = quizSetupHtml(list); return; }
+  if (quiz.loading) { root.innerHTML = `<div class="panel empty"><p>✨ Writing your quiz from your saved items...</p></div>`; return; }
+  root.innerHTML = quiz.i >= quiz.qs.length ? quizResultHtml() : quizQuestionHtml();
+}
+
+function quizSetupHtml(list) {
+  const hist = store.get('ll_quiz_history', []).filter(q => q.key === scope).slice(-6).reverse();
+  return `<div class="panel">
+    <div class="panel-head"><div><strong>Quiz: ${esc(scopeLabel())}</strong> <span class="muted">· ${list.length} saved item${list.length === 1 ? '' : 's'}</span></div></div>
+    <p class="muted" style="margin-top:0">Questions test the same ideas as what you saved. For solved problems you'll get new problems of the same type, with different numbers.</p>
+    <div class="row">
+      <label>Questions
+        <select id="quiz-n"><option>5</option><option selected>8</option><option>10</option></select>
+      </label>
+      <button class="primary" id="start-quiz">Start quiz</button>
+    </div>
+    ${hist.length ? `<h4 style="margin:18px 0 4px">Past quizzes</h4>
+      <table class="hist"><tr><th>Date</th><th>Score</th></tr>
+      ${hist.map(q => `<tr><td>${esc(new Date(q.ts).toLocaleString())}</td><td>${q.correct} / ${q.n} (${pct(q)}%)</td></tr>`).join('')}</table>` : ''}
+  </div>`;
+}
+
+function quizQuestionHtml() {
+  const q = quiz.qs[quiz.i];
+  const answered = quiz.picked !== null;
+  const letters = 'ABCD';
+  return `<div class="panel">
+    <div class="progress"><div style="width:${(quiz.i / quiz.qs.length) * 100}%"></div></div>
+    <div class="q-count">Question ${quiz.i + 1} of ${quiz.qs.length}${quiz.retry ? ' · retrying missed' : ''}</div>
+    <div class="q-text">${esc(q.question)}</div>
+    ${q.options.map((o, i) => {
+      let cls = '';
+      if (answered) cls = i === q.answer ? 'correct' : (i === quiz.picked ? 'wrong' : '');
+      return `<button class="opt ${cls}" data-i="${i}" ${answered ? 'disabled' : ''}><strong>${letters[i]}.</strong> ${esc(o)}</button>`;
+    }).join('')}
+    ${answered ? `<div class="explain"><strong>${quiz.picked === q.answer ? '✅ Correct!' : '❌ Not quite.'}</strong>${q.explanation ? '\n' + esc(q.explanation) : ''}</div>
+      <button class="primary" id="next-q">${quiz.i + 1 >= quiz.qs.length ? 'See results' : 'Next question'}</button>` : ''}
+  </div>`;
+}
+
+function quizResultHtml() {
+  const n = quiz.qs.length, c = quiz.results.filter(r => r.ok).length;
+  const missed = quiz.results.filter(r => !r.ok);
+  return `<div class="panel">
+    <div class="q-count">Results · ${esc(quiz.label)}</div>
+    <div class="score">${c} / ${n} <span class="muted" style="font-size:20px">(${Math.round((c / n) * 100)}%)</span></div>
+    <p>${c === n ? '🎉 Perfect score!' : c / n >= 0.7 ? '👍 Nice work. Review what you missed below.' : '💪 Keep going. Review what you missed and try again.'}</p>
+    ${missed.map(r => `<div class="missed"><div><strong>${esc(r.q.question)}</strong></div>
+      <div>You chose: ${esc(r.q.options[r.picked])}</div>
+      <div class="ans">Correct: ${esc(r.q.options[r.q.answer])}</div>
+      ${r.q.explanation ? `<div class="muted">${esc(r.q.explanation)}</div>` : ''}</div>`).join('')}
+    <div class="row">
+      ${missed.length ? `<button class="primary" id="retry-missed">Retry missed (${missed.length})</button>` : ''}
+      <button class="ghost" id="new-quiz">New quiz</button>
+    </div>
+  </div>`;
+}
+
+async function startQuiz() {
+  const n = parseInt($('#quiz-n').value, 10) || 8;
+  const list = scoped().slice(0, 40);
+  quiz = { loading: true };
+  renderQuiz();
+  const label = scopeLabel(), key = scope;
+  try {
+    const text = await llm({
+      tier: 'smart', max_tokens: 3500,
+      system: 'You write fair, clear quiz questions. Reply with ONLY one JSON object. No markdown, no code fences, no extra text. Write math in plain text (x^2, sqrt(16), 3/4), never LaTeX.',
+      prompt:
+`Create ${n} multiple-choice questions that test the same ideas as the items a student saved while studying "${label}".
+
+Items:
+${itemLines(list)}
+
+Rules:
+- Test the underlying concept. Do not copy an item word for word.
+- For a solved problem, write a NEW similar problem with different numbers or details.
+- For a word or phrase, ask about its meaning or how it is used.
+- Each question has exactly 4 options and exactly one correct answer. Make the wrong options believable.
+- Vary which option is correct.
+
+Return ONLY JSON in this shape:
+{"questions":[{"question":"...","options":["...","...","...","..."],"answer_index":0,"explanation":"one or two sentences on why the answer is right"}]}`
+    });
+    const data = parseJson(text);
+    const qs = (data.questions || []).map(normalizeQ).filter(Boolean);
+    if (!qs.length) throw new Error('No usable questions came back. Try again.');
+    quiz = { qs, i: 0, picked: null, results: [], label, key, retry: false };
+  } catch (e) {
+    quiz = null;
+    setStatus('Could not make the quiz: ' + e.message, 'err');
+  }
+  if (tab === 'quiz') renderQuiz();
+}
+
+function finishQuizIfDone() {
+  if (quiz.i >= quiz.qs.length && !quiz.logged && !quiz.retry) {
+    quiz.logged = true;
+    const hist = store.get('ll_quiz_history', []);
+    hist.push({ ts: Date.now(), key: quiz.key, label: quiz.label, n: quiz.qs.length, correct: quiz.results.filter(r => r.ok).length });
+    store.set('ll_quiz_history', hist.slice(-200));
+    renderSidebar();
+  }
+}
+
+// ------------------------------------------------------------------
+// Events
+// ------------------------------------------------------------------
+document.addEventListener('click', async (e) => {
+  const t = e.target.closest('button');
+  if (!t) return;
+
+  if (t.classList.contains('topic')) {
+    scope = t.dataset.key; quiz = null; render(); return;
+  }
+  if (t.classList.contains('tab')) { tab = t.dataset.tab; render(); return; }
+  if (t.id === 'refresh') { await loadItems(false); return; }
+  if (t.id === 'rename-topic') {
+    const to = prompt(`Rename "${scopeLabel()}" to:`, scopeLabel());
+    if (to && to.trim()) {
+      const newKey = to.trim().toLowerCase();
+      await mutate('rename_topic', { from: scope, to: to.trim() });
+      scope = newKey; render();
+    }
+    return;
+  }
+  if (t.classList.contains('del')) {
+    const id = t.closest('.card')?.dataset.id;
+    if (id && confirm('Delete this item from your history?')) await mutate('delete_items', { ids: [id] });
+    return;
+  }
+  if (t.id === 'gen-guide') { generateGuide(); return; }
+  if (t.id === 'print-guide') { window.print(); return; }
+  if (t.id === 'start-quiz') { startQuiz(); return; }
+  if (t.id === 'new-quiz') { quiz = null; renderQuiz(); return; }
+  if (t.id === 'retry-missed') {
+    const missed = quiz.results.filter(r => !r.ok).map(r => ({ ...r.q, options: r.q.options, answer: r.q.answer }));
+    quiz = { qs: missed, i: 0, picked: null, results: [], label: quiz.label, key: quiz.key, retry: true };
+    renderQuiz(); return;
+  }
+  if (t.classList.contains('opt') && quiz && quiz.picked === null) {
+    const i = parseInt(t.dataset.i, 10);
+    const q = quiz.qs[quiz.i];
+    quiz.picked = i;
+    quiz.results.push({ q, picked: i, ok: i === q.answer });
+    renderQuiz(); return;
+  }
+  if (t.id === 'next-q') {
+    quiz.i++; quiz.picked = null;
+    finishQuizIfDone();
+    renderQuiz(); return;
+  }
+});
+
+document.addEventListener('change', async (e) => {
+  if (e.target.classList.contains('move')) {
+    const id = e.target.closest('.card')?.dataset.id;
+    let topic = e.target.value;
+    if (topic === '__new__') topic = prompt('New topic name:') || '';
+    if (id && topic.trim()) await mutate('set_topic', { ids: [id], topic: topic.trim() });
+    else render();
+  }
+});
+
+document.addEventListener('input', (e) => {
+  if (e.target.id === 'search') {
+    search = e.target.value;
+    const pos = e.target.selectionStart;
+    renderHistory();
+    const box = $('#search'); box.focus(); box.setSelectionRange(pos, pos);
+  }
+});
+
+// ------------------------------------------------------------------
+// Load
+// ------------------------------------------------------------------
+async function loadItems(silent) {
+  try {
+    const r = await ext('get_items');
+    items = (r.items || []).sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+    if (scope !== ALL && !items.some(it => topicKey(it) === scope)) scope = ALL;
+    setStatus('');
+    if (!(quiz && !quiz.loading && quiz.i < quiz.qs.length) && !busy) render();
+    else { renderSidebar(); renderHeader(); }
+  } catch (e) {
+    if (!silent) setStatus(e.message, 'err');
+    render();
+  }
+}
+
+window.addEventListener('focus', () => loadItems(true));
+render();
+loadItems(false);
+</script>
+</body>
+</html>

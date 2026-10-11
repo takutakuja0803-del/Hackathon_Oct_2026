@@ -18,10 +18,30 @@ http.createServer(async (req, res) => {
   if (req.method === 'OPTIONS') return res.end();
 
   if (req.url === '/api/llm' && req.method === 'POST') {
-    let body = ''; for await (const c of req) body += c;
     res.setHeader('content-type', 'application/json');
     try {
-      const { tier = 'fast', system, prompt, max_tokens = 2000 } = JSON.parse(body);
+      let body = '';
+      for await (const c of req) {
+        body += c;
+        if (body.length > 12000000) {
+          res.statusCode = 413;
+          return res.end(JSON.stringify({ error: 'Request too large' }));
+        }
+      }
+      const { tier = 'fast', system, prompt, max_tokens = 1000, image, images } = JSON.parse(body);
+      const ALLOWED_IMAGES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+      const valid = (im) => im && typeof im.base64 === 'string' && ALLOWED_IMAGES.includes(im.media_type);
+      // `images` (several pictures, used by the quiz) or `image` (one picture, used by the snip card)
+      const pics = (Array.isArray(images) ? images : image ? [image] : []).filter(valid).slice(0, 6);
+      const content = pics.length
+        ? [
+            ...pics.flatMap((im, i) => [
+              ...(pics.length > 1 ? [{ type: 'text', text: `Picture ${i + 1}:` }] : []),
+              { type: 'image', source: { type: 'base64', media_type: im.media_type, data: im.base64 } }
+            ]),
+            { type: 'text', text: prompt }
+          ]
+        : prompt;
 
       const r = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
@@ -32,24 +52,18 @@ http.createServer(async (req, res) => {
         },
         body: JSON.stringify({
           model: MODELS[tier] || MODELS.fast,
-          max_tokens: Math.min(Math.max(max_tokens, 2000), 4000),
-          output_config: { effort: 'low' },
+          max_tokens: Math.min(max_tokens, 4000),
           system,
-          messages: [{ role: 'user', content: prompt }]
+          messages: [{ role: 'user', content }]
         })
       });
       const d = await r.json();
-      console.log('Model used:', d.model);
       if (!r.ok) {
         res.statusCode = r.status;
         console.error('Anthropic API Error:', d);
         return res.end(JSON.stringify({ error: d.error?.message || 'API error' }));
       }
-      const text = (d.content || [])
-        .filter(x => x.type === 'text')
-        .map(x => x.text)
-        .join('');
-      return res.end(JSON.stringify({ text }));
+      return res.end(JSON.stringify({ text: d.content.filter(x => x.type === 'text').map(x => x.text).join('') }));
     } catch (e) {
       console.error('Server error:', e);
       res.statusCode = 500;
